@@ -1,0 +1,88 @@
+# Ignore all compressed file types
+*.zip
+*.tar.gz
+*.7z
+*.rar
+*.tar
+*.tgz
+*.bz2
+*.xz
+
+# Ignore large file types
+*.iso
+*.bin
+*.exe
+*.dll
+*.deb
+*.dmg
+
+# Ignore audio and video files
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.mp3
+*.wav
+*.flac
+
+# Ignore image files (large or unnecessary ones)
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+*.bmp
+*.gif
+
+# Ignore backup and temporary files
+*.bak
+*.tmp
+*.swp
+*.swo
+*.old
+
+# Ignore logs
+*.log
+
+# Ignore output folders for large files
+/output/
+build/
+dist/
+node_modules/
+vendor/
+.Rproj.user/
+
+# Ignore large data files
+*.csv
+*.tsv
+*.json
+*.parquet
+*.feather
+*.h5
+
+# Ignore machine learning model artifacts
+*.hdf5
+*.pth
+*.ckpt
+*.onnx
+*.joblib
+*.pickle
+*.pkl
+
+# Ignore Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore compiled code artifacts
+*.o
+*.obj
+*.so
+*.dll
+*.dylib
+*.class
+*.pyc
+*.pyo
+*.jar
+
+# Ignore IDE-specific files
+.vscode/
+.idea/
