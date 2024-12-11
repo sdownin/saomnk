@@ -236,6 +236,8 @@ SaomNkRSienaBiEnv_base <- R6Class(
     rsiena_data = NULL,
     rsiena_effects = NULL,
     rsiena_algorithm = NULL,
+    #
+    rsiena_run_seed = NULL,
     
     # Constructor to initialize the SAOM-NK model
     initialize = function(config_environ_params) {
@@ -381,68 +383,68 @@ SaomNkRSienaBiEnv_base <- R6Class(
       
     },
     
-    ##
-    get_struct_mod_net_stats_list_from_bi_mat = function(bi_env_mat, type='all') {
-      # eff <- m1$rsiena_effects[m1$rsiena_effects$include, ]
-      efflist <- self$config_structure_model$dv_bipartite$effects
-      # set the bipartite environment network matrix
-      # bi_env_mat <- self$bipartite_matrix
-      ### empty matrix to hold actor network statistics
-      df <- data.frame() #nrow=self$M, ncol=length(efflist)
-      effnames <- sapply(efflist, function(x) x$effect, simplify = T)
-      effparams <- sapply(efflist, function(x) x$parameter, simplify = T)
-      mat <- matrix(rep(0, m1$M * length(efflist) ), nrow=self$M, ncol=length(efflist) )
-      colnames(mat) <- effnames
-      rownames(mat) <- 1:self$M
-      #
-      for (i in 1:length(efflist))
-      {
-        eff_name <- efflist[[ i ]]$effect
-        #
-        xActorDegree  <- rowSums(bi_env_mat, na.rm=T)
-        xComponentDegree  <- colSums(bi_env_mat, na.rm=T)
-        ## network statistics dataframe
-        #
-        if (eff_name == 'density' )
-        {
-          stat <- c( xActorDegree )
-        }
-        else if (eff_name == 'outAct' )
-        {
-          stat <- c( xActorDegree^2 )
-        }
-        else if (eff_name == 'inPop' )
-        {
-          stat <- c( bi_env_mat %*% (xComponentDegree + 1) )
-        }
-        # else if (eff_name == 'transTriads' )
-        # {
-        #   stat <- 
-        # }
-        # else if (eff_name == 'cycle4' )
-        # {
-        #   stat <- 
-        # }
-        else
-        {
-          cat(sprintf('\n\nEffect not yet implemented: `%s\n\n`', eff_name))
-        }
-        #
-        mat[ , i] <- stat
-        #
-        df <- rbind(df, data.frame(
-          statistic = stat, 
-          actor_id = factor(1:self$M), 
-          effect_id = factor(i), 
-          effect_name = effnames[i] 
-        ))
-      }
-      #
-      if (type %in% c('df','data.frame'))   return(df)
-      if (type %in% c('mat','matrix'))      return(mat)
-      if (type %in% c('all','both','list',NA)) return(list(df=df, mat=mat))
-      cat(sprintf('specified return type %s not found', type))
-    }, 
+    # ##
+    # get_struct_mod_net_stats_list_from_bi_mat = function(bi_env_mat, type='all') {
+    #   # eff <- m1$rsiena_effects[m1$rsiena_effects$include, ]
+    #   efflist <- self$config_structure_model$dv_bipartite$effects
+    #   # set the bipartite environment network matrix
+    #   # bi_env_mat <- self$bipartite_matrix
+    #   ### empty matrix to hold actor network statistics
+    #   df <- data.frame() #nrow=self$M, ncol=length(efflist)
+    #   effnames <- sapply(efflist, function(x) x$effect, simplify = T)
+    #   effparams <- sapply(efflist, function(x) x$parameter, simplify = T)
+    #   mat <- matrix(rep(0, m1$M * length(efflist) ), nrow=self$M, ncol=length(efflist) )
+    #   colnames(mat) <- effnames
+    #   rownames(mat) <- 1:self$M
+    #   #
+    #   for (i in 1:length(efflist))
+    #   {
+    #     eff_name <- efflist[[ i ]]$effect
+    #     #
+    #     xActorDegree  <- rowSums(bi_env_mat, na.rm=T)
+    #     xComponentDegree  <- colSums(bi_env_mat, na.rm=T)
+    #     ## network statistics dataframe
+    #     #
+    #     if (eff_name == 'density' )
+    #     {
+    #       stat <- c( xActorDegree )
+    #     }
+    #     else if (eff_name == 'outAct' )
+    #     {
+    #       stat <- c( xActorDegree^2 )
+    #     }
+    #     else if (eff_name == 'inPop' )
+    #     {
+    #       stat <- c( bi_env_mat %*% (xComponentDegree + 1) )
+    #     }
+    #     # else if (eff_name == 'transTriads' )
+    #     # {
+    #     #   stat <- 
+    #     # }
+    #     # else if (eff_name == 'cycle4' )
+    #     # {
+    #     #   stat <- 
+    #     # }
+    #     else
+    #     {
+    #       cat(sprintf('\n\nEffect not yet implemented: `%s\n\n`', eff_name))
+    #     }
+    #     #
+    #     mat[ , i] <- stat
+    #     #
+    #     df <- rbind(df, data.frame(
+    #       statistic = stat, 
+    #       actor_id = factor(1:self$M), 
+    #       effect_id = factor(i), 
+    #       effect_name = effnames[i] 
+    #     ))
+    #   }
+    #   #
+    #   if (type %in% c('df','data.frame'))   return(df)
+    #   if (type %in% c('mat','matrix'))      return(mat)
+    #   if (type %in% c('all','both','list',NA)) return(list(df=df, mat=mat))
+    #   cat(sprintf('specified return type %s not found', type))
+    # }, 
     
     
     ##
@@ -1206,17 +1208,20 @@ SaomNkRSienaBiEnv <- R6Class(
                                        n_snapshots=1, 
                                        plot_save = TRUE, overwrite=TRUE, 
                                        rsiena_phase2_nsub=1, rsiena_n2start_scale=1,
-                                       get_eff_doc = FALSE, digits=3
+                                       get_eff_doc = FALSE, digits=3,
+                                       run_seed=123
                                        ) {
+      set.seed(run_seed)
+      self$rsiena_run_seed <- run_seed
       if( overwrite | is.null(self$rsiena_model) ) {
         ## 1. Init simulation
         self$search_rsiena_init(structure_model, get_eff_doc)
         ## 2. Execute simulation
         self$search_rsiena_execute_sim(iterations,
-                                             returnDeps=returnDeps,
-                                             returnChains=returnChains,
-                                             rsiena_phase2_nsub=rsiena_phase2_nsub,
-                                             rsiena_n2start_scale=rsiena_n2start_scale, digits=digits)
+                                       returnDeps=returnDeps,
+                                       returnChains=returnChains,
+                                       rsiena_phase2_nsub=rsiena_phase2_nsub,
+                                       rsiena_n2start_scale=rsiena_n2start_scale, digits=digits)
         ## 3. Process chain of simulation ministeps
         self$search_rsiena_process_ministep_chain()
         ## 4. Process actor statistics (e.g., utility)
@@ -1246,6 +1251,8 @@ SaomNkRSienaBiEnv <- R6Class(
       #   return(self$search_rsiena_plot_actor_utility(rolling_window))
       if (type == 'utility')
         return(self$search_rsiena_plot_actor_utility(actor_ids, thin_factor, smooth_method, show_utility_points))
+      if (type == 'utility_density')
+        return(self$search_rsiena_plot_actor_utility_density())
       #
       stop(sprintf('Plot type not implemented: %s', type))
     },
@@ -1269,7 +1276,7 @@ SaomNkRSienaBiEnv <- R6Class(
       if(length(actor_ids))
         dat <- dat%>%filter(actor_id %in% actor_ids)
       plt <- ggplot(dat, aes(x=chain_step_id, y=utility, color=actor_id)) + 
-        geom_hline(yintercept = mean(dat$utility, na.rm=T), linetype=2, col='darkgray' )
+        geom_hline(yintercept = mean(dat$utility, na.rm=T), linetype=2, col='black' )
       if(show_utility_points)
         plt <- plt + geom_point(alpha=.25, shape=1, size=2)  # geom_line(alpha=.2) +#geom_smooth(method='loess', alpha=.1) + 
       if(smooth_method %in% c('loess','lm','gam'))
@@ -1279,6 +1286,21 @@ SaomNkRSienaBiEnv <- R6Class(
       #
       print(plt)
       #
+      if(return_plot)
+        return(plt)
+    },
+    
+    ##
+    search_rsiena_plot_actor_utility_density = function(return_plot=FALSE) {
+      #
+      dat <- self$actor_stats$util_df ##%>% filter(chain_step_id %% thin_factor == 0)
+      ## Actor density fact plots comparing H1 to H2 utility distribution
+      dat$chain_half <- factor(1 + 1*(dat$chain_step_id >= median(dat$chain_step_id)), levels = c(2,1)) ## reverse order for linetype_1 used for Half_2
+      plt <- ggplot(dat, aes(x=utility, color=actor_id, fill=actor_id, linetype=chain_half)) + 
+         geom_density(alpha=.1, linewidth=1)  + 
+         facet_wrap( ~ actor_id)+
+         theme_bw()
+      print(plt)
       if(return_plot)
         return(plt)
     },
@@ -1962,7 +1984,7 @@ structure_model <- list(
 ## 1. INIT SIM object
 m1 <- SaomNkRSienaBiEnv$new(environ_params)
 ## 2. RUN SIM
-m1$search_rsiena_run(structure_model, iterations=1000, get_eff_doc = FALSE)
+m1$search_rsiena_run(structure_model, iterations=1000, get_eff_doc = FALSE, run_seed=123)
 ##
 m1$search_rsiena_plot('utility', smooth_method = 'loess', show_utility_points = FALSE)
 m1$search_rsiena_plot('utility', smooth_method = 'gam', show_utility_points = FALSE)
@@ -1971,6 +1993,10 @@ m1$search_rsiena_plot('utility', smooth_method = 'lm', show_utility_points = FAL
 m1$search_rsiena_plot('utility', smooth_method = 'loess', show_utility_points = TRUE)
 m1$search_rsiena_plot('utility', smooth_method = 'gam', show_utility_points = TRUE)
 m1$search_rsiena_plot('utility', smooth_method = 'lm', show_utility_points = TRUE)
+#
+m1$search_rsiena_plot('utility_density')
+#
+
 ##
 m1$search_rsiena_plot('utility')
 m1$search_rsiena_plot_actor_utility()
@@ -2367,6 +2393,14 @@ ggplot(utildf, aes(x=utility, color=actor_id, fill=actor_id, linetype=chain_half
 ggplot(util_diff, aes(x=chain_step_id, y=utility, color=actor_id)) + 
   geom_line(alpha=.9, shape=1) +  facet_grid(actor_id ~ .) +
   geom_hline(yintercept = 0, linetype=2) +
+  theme_bw()
+
+## Actor utility difference timeseries
+ggplot(util_diff, aes(x=utility, color=actor_id, fill=actor_id)) + 
+  geom_histogram(alpha=.3, bins=35) + 
+  facet_grid(.~actor_id ) +
+  scale_y_log10() +
+  # geom_hline(yintercept = 0, linetype=2) +
   theme_bw()
 
 
