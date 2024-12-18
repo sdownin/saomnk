@@ -138,13 +138,9 @@ library(tidyr)
 ##
 ##
 get_jaccard_index <- function(m0, m1) {
-  mdiff <-  m1 - m0   ## new m1 - old m0
-  vecdiff <- c(mdiff)
-  # sumdiff <- sum( vecdiff )
+  diffvec <-  c(m1 - m0)   ## new m1 - old m0
   cnt_maintain <- sum( m1 * m0 )
-  # cnt_add <- length(which(vecdiff > 0))
-  # cnt_drop <- length(which(vecdiff < 0))
-  cnt_change <- length(which(vecdiff != 0))
+  cnt_change <- sum( diffvec != 0 )  ## sum = count true cases (added + dropped)
   return( cnt_maintain / (cnt_maintain + cnt_change) )
 }
 
@@ -813,7 +809,8 @@ SaomNkRSienaBiEnv <- R6Class(
                                          returnDeps=T, 
                                          returnChains=T,
                                          rsiena_phase2_nsub=1, rsiena_n2start_scale=1, 
-                                         digits=3) {
+                                         digits=3,
+                                         seed=123) {
       if (is.null(self$rsiena_effects))
         stop('Set rsiena_effects before running simulation.')
       # if (is.null(self$config_payoff_formulas))
@@ -829,7 +826,8 @@ SaomNkRSienaBiEnv <- R6Class(
                                                     simOnly = T,
                                                     nsub = rsiena_phase2_nsub,
                                                     n2start = rsiena_n2start_scale * 2.52 * (7+sum(self$rsiena_effects$include)),
-                                                    n3 = iterations )
+                                                    n3 = iterations,
+                                                    seed = seed)
       
        
       # Run RSiena simulation
@@ -932,11 +930,15 @@ SaomNkRSienaBiEnv <- R6Class(
         unlist(sapply(self$config_structure_model$dv_bipartite$varCovars, function(x) x$fix))
       )
       
+      ## Use system bipartite matrix as start
+      bi_env_mat <- self$bipartite_matrix
+      
       ## remove chain entries where no change was made (keep if !stability )
       tiechdf <- self$chain_stats[ !self$chain_stats$stability, ]
       
       ## get matrix timeseries and network statistics timeseries
       nchains <- length(self$rsiena_model$chain)
+      ## paramters
       theta   <- self$rsiena_model$theta
       ## replace fixed theta param with given param values (instead of zero default when effect is fixed)
       if (any(fixed_params)) 
@@ -1317,32 +1319,34 @@ SaomNkRSienaBiEnv <- R6Class(
 
     ## Single Simulation Run
     search_rsiena_run = function(structure_model, 
-                                       iterations=1000, 
-                                       returnDeps=TRUE, returnChains=TRUE, ## TRUE=simulation only
-                                       n_snapshots=1, 
-                                       plot_save = TRUE, overwrite=TRUE, 
-                                       rsiena_phase2_nsub=1, rsiena_n2start_scale=1,
-                                       get_eff_doc = FALSE, digits=3,
-                                       run_seed=123
-                                       ) {
+                                 iterations=1000, 
+                                 returnDeps=TRUE, returnChains=TRUE, ## TRUE=simulation only
+                                 n_snapshots=1, 
+                                 plot_save = TRUE, overwrite=TRUE, 
+                                 rsiena_phase2_nsub=1, rsiena_n2start_scale=1,
+                                 get_eff_doc = FALSE, digits=3,
+                                 run_seed=123
+                                 ) {
       set.seed(run_seed)
       self$rsiena_run_seed <- run_seed
       if( overwrite | is.null(self$rsiena_model) ) {
         ## 1. Init simulation
-        cat(sprintf('\nDEBUG RUN: 1. search_rsiena_init\n'))
+        # cat(sprintf('\nDEBUG RUN: 1. search_rsiena_init\n'))
         self$search_rsiena_init(structure_model, get_eff_doc)
         ## 2. Execute simulation
-        cat(sprintf('\nDEBUG RUN: 2. search_rsiena_execute_sim\n'))
+        # cat(sprintf('\nDEBUG RUN: 2. search_rsiena_execute_sim\n'))
         self$search_rsiena_execute_sim(iterations,
                                        returnDeps=returnDeps,
                                        returnChains=returnChains,
                                        rsiena_phase2_nsub=rsiena_phase2_nsub,
-                                       rsiena_n2start_scale=rsiena_n2start_scale, digits=digits)
+                                       rsiena_n2start_scale=rsiena_n2start_scale, 
+                                       digits=digits,
+                                       seed=run_seed)
         ## 3. Process chain of simulation ministeps
-        cat(sprintf('\nDEBUG RUN: 3. search_rsiena_process_ministep_chain\n'))
+        # cat(sprintf('\nDEBUG RUN: 3. search_rsiena_process_ministep_chain\n'))
         self$search_rsiena_process_ministep_chain()
         ## 4. Process actor statistics (e.g., utility)
-        cat(sprintf('\nDEBUG RUN: 4. search_rsiena_process_actor_stats\n'))
+        # cat(sprintf('\nDEBUG RUN: 4. search_rsiena_process_actor_stats\n'))
         self$search_rsiena_process_actor_stats()
       } else {
         # self$search_rsiena_extend(objective_list, iterations)
@@ -1360,7 +1364,9 @@ SaomNkRSienaBiEnv <- R6Class(
                                   actor_ids=c(), 
                                   thin_factor=1, 
                                   smooth_method='loess',
-                                  show_utility_points=TRUE
+                                  show_utility_points=TRUE,
+                                  return_plot=FALSE,
+                                  histogram_position='identity'
                                   ) {
       # if (all(is.na(type)) |  'ministep_count' %in% type)
       #   return(self$search_rsiena_plot_actor_ministep_count(rolling_window))
@@ -1371,7 +1377,11 @@ SaomNkRSienaBiEnv <- R6Class(
       if (all(is.na(type)) |  'utility_by_strategy' %in% type)
         return(self$search_rsiena_plot_actor_utility_by_strategy(actor_ids, thin_factor, smooth_method, show_utility_points))
       if (all(is.na(type)) |  'utility_density' %in% type)
-        return(self$search_rsiena_plot_actor_utility_density())
+        return(self$search_rsiena_plot_actor_utility_density(return_plot))
+      if (all(is.na(type)) |  'utility_density_by_strategy' %in% type)
+        return(self$search_rsiena_plot_actor_utility_density_by_strategy(return_plot))
+      if (all(is.na(type)) |  'utility_histogram_by_strategy' %in% type)
+        return(self$search_rsiena_plot_actor_utility_histogram_by_strategy(histogram_position, return_plot))
       if (all(is.na(type)) |  'stability' %in% type)
         return(self$search_rsiena_plot_stability())
       #
@@ -1388,7 +1398,7 @@ SaomNkRSienaBiEnv <- R6Class(
     
     ##
     search_rsiena_plot_actor_utility = function(actor_ids=c(), thin_factor=1, 
-                                                smooth_method='loess', 
+                                                smooth_method='loess', ##"lm", "glm", "gam", "loess","auto"
                                                 show_utility_points=TRUE,
                                                 return_plot=FALSE
                                                 ) {
@@ -1400,7 +1410,7 @@ SaomNkRSienaBiEnv <- R6Class(
         geom_hline(yintercept = mean(dat$utility, na.rm=T), linetype=2, col='black' )
       if(show_utility_points)
         plt <- plt + geom_point(alpha=.25, shape=1, size=2)  # geom_line(alpha=.2) +#geom_smooth(method='loess', alpha=.1) + 
-      if(smooth_method %in% c('loess','lm','gam'))
+      if(exists(smooth_method))
         plt <- plt + geom_smooth(aes(linetype=actor_id), method = smooth_method, linewidth=1, alpha=.15)
       #
       plt <- plt + theme_bw()
@@ -1413,13 +1423,13 @@ SaomNkRSienaBiEnv <- R6Class(
     
     ##
     search_rsiena_plot_actor_utility_by_strategy = function(actor_ids=c(), thin_factor=1, 
-                                                        smooth_method='loess', 
+                                                        smooth_method='loess',  ##"lm", "glm", "gam", "loess","auto"
                                                         show_utility_points=TRUE,
                                                         return_plot=FALSE
                                                         ) {
       ## actor strategy
       if ( attr(self$strat_coCovar, 'nodeSet') != 'ACTORS' )
-        stop("Actor Strategy Constant Covariate not set.")
+        stop("Actor Strategy self$strat_coCovar not set.")
       actor_strat <- as.factor( self$strat_coCovar )
       ## Compare 2 actors utilty
       dat <- self$actor_stats$util_df %>% 
@@ -1431,7 +1441,7 @@ SaomNkRSienaBiEnv <- R6Class(
         geom_hline(yintercept = mean(dat$utility, na.rm=T), linetype=2, col='black' )
       if(show_utility_points)
         plt <- plt + geom_point(aes(color=strategy), alpha=.25, shape=1, size=2)  # geom_line(alpha=.2) +#geom_smooth(method='loess', alpha=.1) + 
-      if(smooth_method %in% c('loess','lm','gam'))
+      if(exists(smooth_method))
         plt <- plt + geom_smooth(aes(linetype=actor_id, color=strategy), method = smooth_method, linewidth=1, alpha=.15)
       #
       plt <- plt + theme_bw()
@@ -1458,31 +1468,84 @@ SaomNkRSienaBiEnv <- R6Class(
     },
     
     ##
+    search_rsiena_plot_actor_utility_density_by_strategy = function(return_plot=FALSE) {
+      ## actor strategy
+      if ( attr(self$strat_coCovar, 'nodeSet') != 'ACTORS' )
+        stop("Actor Strategy self$strat_coCovar not set.")
+      actor_strat <- as.factor( self$strat_coCovar )
+      ## Compare 2 actors utilty
+      dat <- self$actor_stats$util_df %>%  
+        mutate(
+          strategy = actor_strat[ actor_id ] ,
+          chain_below_med =  chain_step_id < median(chain_step_id)
+        )
+      dat$chain_half <- factor(ifelse(dat$chain_below_med, '1st Half', '2nd Half'))
+      ##filter(chain_step_id %% thin_factor == 0) %>% 
+      # dat$chain_half <- factor(1 + 1*(dat$chain_step_id >= median(dat$chain_step_id)), levels = c(2,1)) ## reverse order for linetype_1 used for Half_2
+      # dat <- self$actor_stats$util_df ##%>% filter(chain_step_id %% thin_factor == 0)
+      ##
+      stratmeans <- dat %>% group_by(strategy, chain_half) %>% 
+        summarize(n=n(), mean=mean(utility, na.rm=T), sd=sd(utility, na.rm=T))
+      ## Actor density fact plots comparing H1 to H2 utility distribution
+      plt <- ggplot(dat, aes(x=utility, color=strategy, fill=strategy)) + ##linetype=chain_half
+        geom_density(alpha=.1, linewidth=1)  +
+        # geom_histogram(alpha=.1, position = 'dodge') +
+        facet_grid( chain_half ~ .) +
+        geom_vline(data = stratmeans, aes(xintercept = mean, color=strategy), linetype=2, linewidth=.9) +
+        # geom_vline(xintercept = 0, linetype=2, linewidth=.9, color='gray')+
+        theme_bw()
+      print(plt)
+      if(return_plot)
+        return(plt)
+    },
+    
+    ##
+    search_rsiena_plot_actor_utility_histogram_by_strategy = function(histogram_position='identity', 
+                                                                      return_plot=FALSE
+                                                                      ) {
+      ## actor strategy
+      if ( attr(self$strat_coCovar, 'nodeSet') != 'ACTORS' )
+        stop("Actor Strategy self$strat_coCovar not set.")
+      actor_strat <- as.factor( self$strat_coCovar )
+      ## Compare 2 actors utilty
+      dat <- self$actor_stats$util_df %>%  
+        mutate(
+          strategy = actor_strat[ actor_id ] ,
+          chain_below_med =  chain_step_id < median(chain_step_id)
+        )
+      dat$chain_half <- factor(ifelse(dat$chain_below_med, '1st Half', '2nd Half'))
+      ##
+      stratmeans <- dat %>% group_by(strategy, chain_half) %>% 
+        summarize(n=n(), mean=mean(utility, na.rm=T), sd=sd(utility, na.rm=T))
+      ## Actor density fact plots comparing H1 to H2 utility distribution
+      plt <- ggplot(dat, aes(x=utility, color=strategy, fill=strategy)) + ##linetype=chain_half
+        geom_histogram(alpha=.1, position = histogram_position) +
+        facet_grid( chain_half ~ strategy ) +
+        geom_vline(data = stratmeans, aes(xintercept = mean, color=strategy), linetype=2, linewidth=.9) +
+        # geom_vline(xintercept = 0, linetype=2, linewidth=.9, color='gray')+
+        theme_bw()
+      print(plt)
+      if(return_plot)
+        return(plt)
+    },
+    
+    ##
     search_rsiena_plot_actor_ministep_count = function(rolling_window = 20) {
-      
       if (is.null(self$chain_stats))
         stop("Run RSiena to set chain before plotting chain stats.")
-      
       ## Get Actor-period count of ministep decisions
-      step_summary_df <- self$chain_stats %>%
-        filter( X__dv_name=='self$bipartite_rsienaDV') %>% 
-        group_by(X__id_from)
+      step_summary_df <- self$chain_stats %>% mutate(chain_step_id = row_number()) %>%
+        filter( dv_varname =='self$bipartite_rsienaDV') %>% 
+        group_by(id_from)
       #
-      iters_with_change <- unique(step_summary_df$iteration_id)
+      iters_with_change <- unique(step_summary_df$chain_step_id)
       #
       cnt_mat <- matrix(0, nrow=self$M, ncol=length(self$rsiena_model$chain) )
       for (iter in iters_with_change) {
         cat(sprintf(' %s ', iter))
-        iter_df <- step_summary_df %>% filter(iteration_id == iter) ##%>% mutate(X__id_from=X__id_from+1)
-        actor_cnts <- iter_df %>% group_by(X__id_from) %>% count()
-        # id_not_0s <- ( ! actor_cnts$X__id_from %in% c(0,'0') )
-        # if ( any( ! id_not_0s ) ) {
-        #   print('zero in id_from ?:')
-        #   print(id_not_0s)
-        #   actor_cnts <- actor_cnts %>% filter( ! X__id_from %in% c(0,'0') )
-        # }
-        # ids_from <- as.numeric(actor_cnts$X__id_from) + 1
-        cnt_mat[ actor_cnts$X__id_from, iter ] <- actor_cnts$n
+        iter_df <- step_summary_df %>% filter(chain_step_id == iter) ##%>% mutate(X__id_from=X__id_from+1)
+        actor_cnts <- iter_df %>% group_by(id_from) %>% count()
+        cnt_mat[ actor_cnts$id_from, iter ] <- actor_cnts$n
       }
       # View(.)
       
@@ -1511,7 +1574,6 @@ SaomNkRSienaBiEnv <- R6Class(
       
       return(plt)
       # ggplot(long_data, aes(x=period, y=count, color=factor(actor))) + geom_point() + geom_smooth()
-      
     },
     
 
@@ -2134,7 +2196,7 @@ environ_params <- list(
 # ), nrow=environ_params$M, byrow=TRUE)
 ######### CONSTANT ACTOR STRATEGY ########
 # strat  <- c(rep(-1, round(environ_params$M / 2)), rep(1, round(environ_params$M / 2)))
-strat <- c(-.1, 0, .2, -.1, 0, .2, -.1, 0)
+strat <- c(-1, 0, 1, -1, 0, 1, -1, 0)
 
 
 ## 2. Strategies sets the objective function as a linear combination of network stats across DVs
@@ -2149,7 +2211,7 @@ structure_model <- list(
       # list(effect='cycle4', parameter=.5, fix=T, dv_name='self$bipartite_rsienaDV')#, #interaction1 = NULL
     ),
     coCovars = list( ##**MONADIC CONSTANT COVARIATE EFFECTS -- STRATEGY**
-      list(effect='egoX',parameter=3, fix=T,dv_name='self$bipartite_rsienaDV',interaction1='self$strat_coCovar',x=strat)#, #interaction1 = NULL
+      list(effect='egoX',parameter=.1, fix=T,dv_name='self$bipartite_rsienaDV',interaction1='self$strat_coCovar',x=strat)#, #interaction1 = NULL
     ),
     varCovars = list() ##**MONADIC TIME-VARYING COVARIATE EFFECTS -- DYNAMIC STRATEGY PROGRAMS**
   )
@@ -2173,9 +2235,13 @@ structure_model <- list(
 ## 1. INIT SIM object
 m1 <- SaomNkRSienaBiEnv$new(environ_params)
 ## 2. RUN SIM
-m1$search_rsiena_run(structure_model, iterations=1000, get_eff_doc = FALSE, run_seed=1234)
+m1$search_rsiena_run(structure_model, iterations=500, get_eff_doc = FALSE, run_seed=1234)
+m1$search_rsiena_plot('utility_density_by_strategy')
 #
+m1$search_rsiena_plot('utility_by_strategy', smooth_method = 'loess', show_utility_points = T)
 m1$search_rsiena_plot('utility_by_strategy', smooth_method = 'loess', show_utility_points = FALSE)
+m1$search_rsiena_plot('utility_density_by_strategy')
+m1$search_rsiena_plot('utility_histogram_by_strategy')
 
 
 ##
@@ -3982,166 +4048,166 @@ head(long_df_tidyr)
 
 
 
-library(RSiena) # or RSienaTest
-
-###############################################################################
-###                                                                         ###
-###         First main function: SimulateNetworks                           ###
-###                                                                         ###
-###############################################################################
-
-
-SimulateNetworks <- function(n, M, rate, dens, rec, tt, c3,
-                             Vaego, Vaalt, Vasim, Vbego, Vbalt, Vbsim){
-  # Simulates M consecutive network waves, with n actors,
-  # according to a stochastic actor-oriented model
-  # with parameter values rate for rate,
-  # dens for outdegree, rec for reciprocity,
-  # tt for transitive triplets, c3 for 3-cycles,
-  # an actor covariate Va with values alternating between 0 and 1,
-  # with parameter values Vaego, Vaalt, Vasim
-  # for egoX, altX, and simX with respect to Va,
-  # and an actor covariate Vb with a standard normal distribution,
-  # with parameter values Vbego, Vbalt, Vbsim
-  # for egoX, altX, and simX with respect to Vb.
-  ##
-  # Create actor covariates
-  V0 <- rep(0, n)
-  V0[2*(1:(n %/% 2))] <- 1 # equal binary
-  V1 <- rnorm(n, 0, 1)
-  # Create initial 2-wave data to get a suitable data structure.
-  # arbitrarily, this initial network has an expected average degree of 3
-  X0 <- matrix(rbinom(n*n,1,3/(n-1)),n,n)
-  diag(X0) <- 0
-  X1 <- X0
-  # but X0 and X1 should not be identical for use in sienaDependent
-  X0[1,2] <- 0
-  X0[2,1] <- 1
-  X1[1,2] <- 1
-  X1[2,1] <- 0
-  XX <- array(NA,c(n,n,2))
-  XX[,,1] <- X0
-  XX[,,2] <- X1
-  # With this data structure, we now can create the data.
-  Va <- coCovar(V0)
-  Vb <- coCovar(V1)
-  X   <- sienaDependent(XX, allowOnly = FALSE)
-  InitData <- sienaDataCreate(X, Va, Vb)
-  InitEff0 <- getEffects(InitData)
-  # sink to avoid printing to the screen
-  sink("eff.txt")
-  # Specify the parameters.
-  # The rate parameter is first multiplied by 10,
-  # which will be used only to get from the totally random network XX[,,1] = X0
-  # to the network that will be the simulated first wave.
-  InitEff0 <- setEffect(InitEff0, Rate, type="rate", initialValue = 10*rate)
-  InitEff0 <- setEffect(InitEff0, density, initialValue = dens)
-  InitEff0 <- setEffect(InitEff0, recip, initialValue = rec)
-  InitEff0 <- setEffect(InitEff0, transTrip, initialValue = tt)
-  InitEff0 <- setEffect(InitEff0, cycle3, initialValue = c3)
-  InitEff0 <- setEffect(InitEff0, egoX, interaction1="Va", initialValue = Vaego)
-  InitEff0 <- setEffect(InitEff0, altX, interaction1="Va", initialValue = Vaalt)
-  InitEff0 <- setEffect(InitEff0, simX, interaction1="Va", initialValue = Vasim)
-  InitEff0 <- setEffect(InitEff0, egoX, interaction1="Vb", initialValue = Vbego)
-  InitEff0 <- setEffect(InitEff0, altX, interaction1="Vb", initialValue = Vbalt)
-  InitEff0 <- setEffect(InitEff0, simX, interaction1="Vb", initialValue = Vbsim)
-  # The parameter given for n3 should be larger than sum(InitEff0$include)
-  nthree <- sum(InitEff0$include)	+ 5
-  InitAlg <- sienaAlgorithmCreate(projname="Init", useStdInits=FALSE,
-                                  cond=FALSE, nsub=0, n3=nthree, simOnly=TRUE)
-  # Simulate the first wave.
-  InitSim   <- siena07(InitAlg, data=InitData, eff=InitEff0,
-                       returnDeps=TRUE, batch=TRUE, silent=TRUE)
-  # Now prepare for simulating waves 2 to M.
-  # Create empty result network.
-  Xs <- array(0, dim=c(n,n,M))
-  # The rate parameter value from the function call is reinstated in InitEff.
-  InitEff <- InitEff0
-  InitEff <- setEffect(InitEff, Rate, type="rate", initialValue = rate)
-  sink()
-  for (m in 1:M){
-    # Note that we start this loop with a previously simulated network.
-    # Transform the previously simulated network
-    # from edge list into adjacency matrix
-    XXsim <- matrix(0,n,n)
-    nsim  <- InitAlg$n3
-    XXsim[InitSim$sims[[nsim]][[1]]$X[[1]][,1:2]]  <- InitSim$sims[[nsim]][[1]]$X[[1]][,3]
-    # Put simulated network into the result matrix.
-    Xs[,,m] <- XXsim
-    # Put simulated network in desired places for the next simulation
-    XX[,,2] <- XX[,,1] # used only to get the data structure
-    XX[,,1] <- XXsim
-    if (m < M){
-      # The following is only to prevent the error that would occur
-      # in the very unlikely event XX[,,1] == XX[,,2].
-      if (identical(XX[,,1], XX[,,2])){XX[1,2,1] <- 1 - XX[1,2,2]}
-      # Specify the two-wave network data set starting with XX[,,1].
-      X <- sienaDependent(XX, allowOnly = FALSE)
-      # Simulate wave m+1 starting at XX[,,1] which is the previous XXsim
-      InitData  <- sienaDataCreate(X, Va, Vb)
-      InitSim <- siena07(InitAlg, data=InitData, eff=InitEff,
-                         returnDeps=TRUE, batch=TRUE, silent=TRUE)
-    }
-  }
-  # Present the average degrees to facilitate tuning the outdegree parameter
-  # to achieve a desired average value for the average degrees.
-  cat("Average degrees ", round(colSums(Xs,dims=2)/n, digits=2), "\n")
-  # Result: simulated data set; covara and covarb are vectors of length n;
-  # networks is an array of dimension nxnxM
-  list(covara = V0, covarb = V1, networks = Xs)
-}
-
-
-###############################################################################
-###                                                                         ###
-###         Examples                                                        ###
-###                                                                         ###
-###############################################################################
-
-
-# Trial values:
-n <- 20
-M <- 4
-rate <- 2
-dens <- -1.9
-rec <- 2
-tt <- 0.3
-c3 <- -0.3
-Vaego <- 0
-Vaalt <- 0
-Vasim <- 0.6
-Vbego <- 0.5
-Vbalt <- -0.5
-Vbsim <- 0.5
-
-# Example call:
-SN <- SimulateNetworks(n, M, rate, dens, rec, tt, c3, Vaego, Vaalt, Vasim,
-                       Vbego, Vbalt, Vbsim)
-# You can repeat this call a few times, and then see the varying values
-# reported for the average degrees.
-# You can also experiment this with other values for dens,
-# keeping everything else the same,
-# varying dens by values of +/- 0.05 to +/- 0.2, for example.
-
-# For larger n, slightly lower values of dens are required
-# to achieve roughly the same average degrees. For example:
-n <- 30
-dens <- -2.0
-SN <- SimulateNetworks(n, M, rate, dens, rec, tt, c3, Vaego, Vaalt, Vasim,
-                       Vbego, Vbalt, Vbsim)
-
-# Results:
-SN[[1]]
-# the same as
-SN$covara
-
-SN[[2]]
-# the same as
-SN$covarb
-
-SN[[3]]
-# the same as
-SN$networks
+# library(RSiena) # or RSienaTest
+# 
+# ###############################################################################
+# ###                                                                         ###
+# ###         First main function: SimulateNetworks                           ###
+# ###                                                                         ###
+# ###############################################################################
+# 
+# 
+# SimulateNetworks <- function(n, M, rate, dens, rec, tt, c3,
+#                              Vaego, Vaalt, Vasim, Vbego, Vbalt, Vbsim){
+#   # Simulates M consecutive network waves, with n actors,
+#   # according to a stochastic actor-oriented model
+#   # with parameter values rate for rate,
+#   # dens for outdegree, rec for reciprocity,
+#   # tt for transitive triplets, c3 for 3-cycles,
+#   # an actor covariate Va with values alternating between 0 and 1,
+#   # with parameter values Vaego, Vaalt, Vasim
+#   # for egoX, altX, and simX with respect to Va,
+#   # and an actor covariate Vb with a standard normal distribution,
+#   # with parameter values Vbego, Vbalt, Vbsim
+#   # for egoX, altX, and simX with respect to Vb.
+#   ##
+#   # Create actor covariates
+#   V0 <- rep(0, n)
+#   V0[2*(1:(n %/% 2))] <- 1 # equal binary
+#   V1 <- rnorm(n, 0, 1)
+#   # Create initial 2-wave data to get a suitable data structure.
+#   # arbitrarily, this initial network has an expected average degree of 3
+#   X0 <- matrix(rbinom(n*n,1,3/(n-1)),n,n)
+#   diag(X0) <- 0
+#   X1 <- X0
+#   # but X0 and X1 should not be identical for use in sienaDependent
+#   X0[1,2] <- 0
+#   X0[2,1] <- 1
+#   X1[1,2] <- 1
+#   X1[2,1] <- 0
+#   XX <- array(NA,c(n,n,2))
+#   XX[,,1] <- X0
+#   XX[,,2] <- X1
+#   # With this data structure, we now can create the data.
+#   Va <- coCovar(V0)
+#   Vb <- coCovar(V1)
+#   X   <- sienaDependent(XX, allowOnly = FALSE)
+#   InitData <- sienaDataCreate(X, Va, Vb)
+#   InitEff0 <- getEffects(InitData)
+#   # sink to avoid printing to the screen
+#   sink("eff.txt")
+#   # Specify the parameters.
+#   # The rate parameter is first multiplied by 10,
+#   # which will be used only to get from the totally random network XX[,,1] = X0
+#   # to the network that will be the simulated first wave.
+#   InitEff0 <- setEffect(InitEff0, Rate, type="rate", initialValue = 10*rate)
+#   InitEff0 <- setEffect(InitEff0, density, initialValue = dens)
+#   InitEff0 <- setEffect(InitEff0, recip, initialValue = rec)
+#   InitEff0 <- setEffect(InitEff0, transTrip, initialValue = tt)
+#   InitEff0 <- setEffect(InitEff0, cycle3, initialValue = c3)
+#   InitEff0 <- setEffect(InitEff0, egoX, interaction1="Va", initialValue = Vaego)
+#   InitEff0 <- setEffect(InitEff0, altX, interaction1="Va", initialValue = Vaalt)
+#   InitEff0 <- setEffect(InitEff0, simX, interaction1="Va", initialValue = Vasim)
+#   InitEff0 <- setEffect(InitEff0, egoX, interaction1="Vb", initialValue = Vbego)
+#   InitEff0 <- setEffect(InitEff0, altX, interaction1="Vb", initialValue = Vbalt)
+#   InitEff0 <- setEffect(InitEff0, simX, interaction1="Vb", initialValue = Vbsim)
+#   # The parameter given for n3 should be larger than sum(InitEff0$include)
+#   nthree <- sum(InitEff0$include)	+ 5
+#   InitAlg <- sienaAlgorithmCreate(projname="Init", useStdInits=FALSE,
+#                                   cond=FALSE, nsub=0, n3=nthree, simOnly=TRUE)
+#   # Simulate the first wave.
+#   InitSim   <- siena07(InitAlg, data=InitData, eff=InitEff0,
+#                        returnDeps=TRUE, batch=TRUE, silent=TRUE)
+#   # Now prepare for simulating waves 2 to M.
+#   # Create empty result network.
+#   Xs <- array(0, dim=c(n,n,M))
+#   # The rate parameter value from the function call is reinstated in InitEff.
+#   InitEff <- InitEff0
+#   InitEff <- setEffect(InitEff, Rate, type="rate", initialValue = rate)
+#   sink()
+#   for (m in 1:M){
+#     # Note that we start this loop with a previously simulated network.
+#     # Transform the previously simulated network
+#     # from edge list into adjacency matrix
+#     XXsim <- matrix(0,n,n)
+#     nsim  <- InitAlg$n3
+#     XXsim[InitSim$sims[[nsim]][[1]]$X[[1]][,1:2]]  <- InitSim$sims[[nsim]][[1]]$X[[1]][,3]
+#     # Put simulated network into the result matrix.
+#     Xs[,,m] <- XXsim
+#     # Put simulated network in desired places for the next simulation
+#     XX[,,2] <- XX[,,1] # used only to get the data structure
+#     XX[,,1] <- XXsim
+#     if (m < M){
+#       # The following is only to prevent the error that would occur
+#       # in the very unlikely event XX[,,1] == XX[,,2].
+#       if (identical(XX[,,1], XX[,,2])){XX[1,2,1] <- 1 - XX[1,2,2]}
+#       # Specify the two-wave network data set starting with XX[,,1].
+#       X <- sienaDependent(XX, allowOnly = FALSE)
+#       # Simulate wave m+1 starting at XX[,,1] which is the previous XXsim
+#       InitData  <- sienaDataCreate(X, Va, Vb)
+#       InitSim <- siena07(InitAlg, data=InitData, eff=InitEff,
+#                          returnDeps=TRUE, batch=TRUE, silent=TRUE)
+#     }
+#   }
+#   # Present the average degrees to facilitate tuning the outdegree parameter
+#   # to achieve a desired average value for the average degrees.
+#   cat("Average degrees ", round(colSums(Xs,dims=2)/n, digits=2), "\n")
+#   # Result: simulated data set; covara and covarb are vectors of length n;
+#   # networks is an array of dimension nxnxM
+#   list(covara = V0, covarb = V1, networks = Xs)
+# }
+# 
+# 
+# ###############################################################################
+# ###                                                                         ###
+# ###         Examples                                                        ###
+# ###                                                                         ###
+# ###############################################################################
+# 
+# 
+# # Trial values:
+# n <- 20
+# M <- 4
+# rate <- 2
+# dens <- -1.9
+# rec <- 2
+# tt <- 0.3
+# c3 <- -0.3
+# Vaego <- 0
+# Vaalt <- 0
+# Vasim <- 0.6
+# Vbego <- 0.5
+# Vbalt <- -0.5
+# Vbsim <- 0.5
+# 
+# # Example call:
+# SN <- SimulateNetworks(n, M, rate, dens, rec, tt, c3, Vaego, Vaalt, Vasim,
+#                        Vbego, Vbalt, Vbsim)
+# # You can repeat this call a few times, and then see the varying values
+# # reported for the average degrees.
+# # You can also experiment this with other values for dens,
+# # keeping everything else the same,
+# # varying dens by values of +/- 0.05 to +/- 0.2, for example.
+# 
+# # For larger n, slightly lower values of dens are required
+# # to achieve roughly the same average degrees. For example:
+# n <- 30
+# dens <- -2.0
+# SN <- SimulateNetworks(n, M, rate, dens, rec, tt, c3, Vaego, Vaalt, Vasim,
+#                        Vbego, Vbalt, Vbsim)
+# 
+# # Results:
+# SN[[1]]
+# # the same as
+# SN$covara
+# 
+# SN[[2]]
+# # the same as
+# SN$covarb
+# 
+# SN[[3]]
+# # the same as
+# SN$networks
 
 
 
