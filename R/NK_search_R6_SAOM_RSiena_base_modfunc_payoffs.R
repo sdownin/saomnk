@@ -122,10 +122,13 @@ library(Matrix)
 library(network)
 library(igraph)
 library(visNetwork)
-library(ggplot2)
 library(reshape2)
+library(ggplot2)
+library(grid)
 library(gridExtra)
+library(cowplot)
 library(ggraph)
+library(ggpubr)
 library(RSiena)
 library(texreg)
 library(grid) # Load the necessary library for grid.text
@@ -203,27 +206,60 @@ SaomNkRSienaBiEnv_base <- R6Class(
     social_matrix = NULL,
     search_matrix = NULL,
     #
+    bipartite_matrix_waves = list(), ## list of simulated networks for extended multi-wave simulation; implements dynamic strategy choice/changes
+    #
     bipartite_rsienaDV = NULL,
     social_rsienaDV = NULL,
     search_rsienaDV = NULL,
     #
-    strat_coCovar = NULL,
+    strat_1_coCovar = NULL,
+    strat_2_coCovar = NULL,
+    strat_3_coCovar = NULL,
+    strat_4_coCovar = NULL,
+    strat_5_coCovar = NULL,
+    # strat_6_coCovar = NULL,
     strat_mat_varCovar = NULL,
+    #
+    component_1_coCovar = NULL,
+    component_2_coCovar = NULL,
+    # component_3_coCovar = NULL,
+    #
+    plots = list(),
+    multiwave_plots = list(),
     #
     fitness_landscape = NULL, # Fitness landscape matrix
     progress_scores = c(),  # Track scores over iterations
     P_change = NULL,          # Probability of changing the component interaction matrix
     #
-    chain_stats = NULL,  ## 
-    actor_stats = NULL,
-    component_stats = NULL,
-    social_net_stats = NULL,
-    component_net_stats = NULL,
+    chain_stats = NULL,  ##
+    #
+    actor_stats_df = NULL,
+    actor_util_df = NULL,
+    actor_util_diff_df = NULL,
+    #
+    component_stats_df = NULL,
+    actor_proj_stats_df = NULL,
+    component_proj_stats_df = NULL,
+    #
+    actor_wave_stats = NULL,
+    actor_wave_util = NULL,
+    actor_wave_util_diff = NULL,
+    #
+    component_wave_stats =  NULL,
+    #
+    actor_proj_wave_stats = list(),
+    component_proj_wave_stats = list(),
+
     ## Coupled Degree Statistics
-    K_A = NULL, ## degree distribution statistics of Actor projected social network (common components)
-    K_B1 = NULL, ## degree distribution statistics of Bipartite social network - [1]Actors
-    K_B2 = NULL, ## degree distribution statistics of Bipartite social network - [2]Components
-    K_C = NULL, ## degree distribution statistics of Component projected network (common actors)
+    K_A_df = NULL, ## degree distribution statistics of Actor projected social network (common components)
+    K_B1_df = NULL, ## degree distribution statistics of Bipartite social network - [1]Actors
+    K_B2_df = NULL, ## degree distribution statistics of Bipartite social network - [2]Components
+    K_C_df = NULL, ## degree distribution statistics of Component projected network (common actors)
+    #
+    K_wave_A = NULL,
+    K_wave_B1 = NULL,
+    K_wave_B2 = NULL,
+    K_wave_C = NULL,
     ##
     sims_stats = NULL,
     #   'K_A'=list(), ##**TODO** Actor social space [degree = central position in social network]
@@ -231,12 +267,15 @@ SaomNkRSienaBiEnv_base <- R6Class(
     #   'K_C'=list()  #  Component space  [ degree = interdependence/structuration : epistatic interactions ]
     #   ),
     # #
-    rsiena_model = NULL,   
+    rsiena_model = NULL,
     rsiena_data = NULL,
     rsiena_effects = NULL,
     rsiena_algorithm = NULL,
     #
+    rsiena_model_waves = list(), ## list of models from multiwave simulation; implements dynamic strategy choice/changes
+    #
     rsiena_run_seed = NULL,
+    rsiena_env_seed = NULL,
     
     # Constructor to initialize the SAOM-NK model
     initialize = function(config_environ_params) {
@@ -256,10 +295,11 @@ SaomNkRSienaBiEnv_base <- R6Class(
       # self$social_network <- self$project_social_space()
       # self$search_landscape <- self$project_search_space()
       default_seed <- 123
-      rand_seed <- ifelse(is.null(config_environ_params[['rand_seed']]), 
-                          default_seed,
-                          config_environ_params[['rand_seed']])
-      self$set_system_from_bipartite_igraph( self$random_bipartite_igraph(rand_seed) )
+      self$rsiena_env_seed <- ifelse(is.null(config_environ_params[['rand_seed']]), 
+                                      default_seed,
+                                      config_environ_params[['rand_seed']])
+      start_bipartite_igraph <- self$random_bipartite_igraph(self$rsiena_env_seed)
+      self$set_system_from_bipartite_igraph( start_bipartite_igraph )
       #
       self$TIMESTAMP <- round( as.numeric(Sys.time())*100 )
       self$SIM_NAME <- config_environ_params[['name']]
@@ -384,6 +424,36 @@ SaomNkRSienaBiEnv_base <- R6Class(
                                               interaction1 = eff$interaction1,
                                               fix = eff$fix)
         self$rsiena_effects <- setEffect(self$rsiena_effects,  egoX, 
+                                         interaction1 = eff$interaction1,
+                                         name = eff$dv_name, parameter = eff$parameter,  fix = eff$fix)
+      }
+      else if (eff$effect == 'altX')
+      {
+        self$rsiena_effects <- includeEffects(self$rsiena_effects,  altX, ## get network statistic function from effect name (character)
+                                              name = eff$dv_name, 
+                                              interaction1 = eff$interaction1,
+                                              fix = eff$fix)
+        self$rsiena_effects <- setEffect(self$rsiena_effects,  altX, 
+                                         interaction1 = eff$interaction1,
+                                         name = eff$dv_name, parameter = eff$parameter,  fix = eff$fix)
+      }
+      else if (eff$effect == 'outActX')
+      {
+        self$rsiena_effects <- includeEffects(self$rsiena_effects,  outActX, ## get network statistic function from effect name (character)
+                                              name = eff$dv_name, 
+                                              interaction1 = eff$interaction1,
+                                              fix = eff$fix)
+        self$rsiena_effects <- setEffect(self$rsiena_effects,  outActX, 
+                                         interaction1 = eff$interaction1,
+                                         name = eff$dv_name, parameter = eff$parameter,  fix = eff$fix)
+      }
+      else if (eff$effect == 'inPopX')
+      {
+        self$rsiena_effects <- includeEffects(self$rsiena_effects,  inPopX, ## get network statistic function from effect name (character)
+                                              name = eff$dv_name, 
+                                              interaction1 = eff$interaction1,
+                                              fix = eff$fix)
+        self$rsiena_effects <- setEffect(self$rsiena_effects,  inPopX, 
                                          interaction1 = eff$interaction1,
                                          name = eff$dv_name, parameter = eff$parameter,  fix = eff$fix)
       }
@@ -520,12 +590,46 @@ SaomNkRSienaBiEnv_base <- R6Class(
               length(covar)==self$M  ## array, matrix; vector
             )
           )
-          if( checkConform ){
-            stat <- covar * xActorDegree ##**vector element-wise multiplication by rows of covar matrix, or elements of covar array
-          } else {
+          if( ! checkConform )  
             stop('egoX covar not conformable for multiplication given number of actors')
-          }
+          stat <- c( covar * xActorDegree ) ##**vector element-wise multiplication by rows of covar matrix, or elements of covar array
             
+        }
+        else if (item$effect == 'altX')
+        {
+          covar <- item$x
+          checkConform <-  all(
+            (  ## A or B
+              class(covar) %in% c('array','matrix') & nrow(covar)==self$M
+            ) | ( 
+              length(covar)==self$N  ## COMPONENT array, for ACTOR statistic 
+            )
+          )
+          if( ! checkConform )
+            stop('altX covar not conformable for multiplication given number of components or actors')
+          covarComponentMat <- matrix(rep(covar, self$M), nrow=self$M, ncol=self$N, byrow = TRUE)
+          stat <- rowSums( covarComponentMat * bi_env_mat, na.rm=T ) ##**vector element-wise multiplication by rows of covar matrix, or elements of covar array
+          
+        }
+        ###--------------------------------
+        else if (item$effect == 'outActX') ## interaction1 component_coCovar
+        {
+          ## N-vector of component covariate
+          covar <- item$x 
+          # MxN matrix of row-stacked component covariate (repeated for each actor)
+          covarComponentMat <- matrix(rep(covar, self$M), nrow=self$M, ncol=self$N, byrow = TRUE)
+          ## M-vector of actor's squared sum of component-covariate-weighted component connections (weighted version of the squared degree)
+          stat <- rowSums( covarComponentMat * bi_env_mat, na.rm = T)^2
+        }
+        else if (item$effect == 'inPopX') ## interaction1 strat_coCovar
+        {
+          covar <- item$x ## M-vector of actor strategy covariate
+          ## MxN matrix holding actor strategy covariate as columns stacked for each component
+          covarActorMat <- matrix(rep(covar, self$N), nrow=self$M, ncol=self$N,  byrow = FALSE)
+          ## N-vector of component weights = sum of actor covariate for the component's connected actors
+          component_weights_from_actor_stats <- colSums(covarActorMat * bi_env_mat, na.rm=T)
+          ## M-vector of actor sum of it's connected component weights (which are computed as the sum of the connected actor covariates)
+          stat <- rowSums( bi_env_mat * component_weights_from_actor_stats, na.rm=T ) ##**vector element-wise multiplication by rows of covar matrix, or elements of covar array
         }
         else
         {
@@ -598,23 +702,150 @@ SaomNkRSienaBiEnv <- R6Class(
       self$degree_history_K_E[[self$ITERATION]] <- degree( self$get_component_igraph() )
     },
     
+    ##
+    get_rsiena_data_from_structure_model = function(structure_model) {
+      ACTORS     <- sienaNodeSet(self$M, nodeSetName="ACTORS")
+      COMPONENTS <- sienaNodeSet(self$N, nodeSetName="COMPONENTS")
+      # strat_mat_varCovar <- varCovar(strat_eff$x, nodeSet = 'ACTORS')
+      if (! 'coCovars' %in% names(structure_model$dv_bipartite) ) {
+        rsiena_data <- sienaDataCreate(list(self$bipartite_rsienaDV), nodeSets = list(ACTORS, COMPONENTS))
+        return(rsiena_data)
+      }
+      dv_name <- structure_model$dv_bipartite$name
+        
+      covDvTypes <- sapply(structure_model$dv_bipartite$coCovars, function(x)x$interaction1)
+      componentDV_ids <- grep('self\\$component_\\d{1,2}_coCovar', covDvTypes) ## ex: "self$component_1_coCovar"
+      stratDV_ids     <- grep('self\\$strat_\\d{1,2}_coCovar', covDvTypes ) ## ex: "self$strat_1_coCovar" 
+      
+      nstrat <- length(stratDV_ids)
+      ncomponent <- length(componentDV_ids)
+    
+      ## 1 Component ------------------------------
+      component_1_eff <- structure_model$dv_bipartite$coCovars[[ componentDV_ids[1] ]]
+      self$component_1_coCovar <- coCovar(component_1_eff$x, nodeSet = 'COMPONENTS')
+      ##-------------------------------------------
+      #
+      strat_1_eff <- structure_model$dv_bipartite$coCovars[[ stratDV_ids[1] ]]
+      self$strat_1_coCovar <- coCovar(strat_1_eff$x, nodeSet = 'ACTORS')
+      if (ncomponent==1 & nstrat==1 ) 
+      {
+        rsiena_data <- sienaDataCreate(list(self$bipartite_rsienaDV, self$component_1_coCovar, self$strat_1_coCovar), nodeSets = list(ACTORS, COMPONENTS))
+        return(rsiena_data)
+      }
+      if (ncomponent==1 & nstrat==2 ) 
+      {
+        strat_2_eff <- structure_model$dv_bipartite$coCovars[[ stratDV_ids[2] ]]
+        self$strat_2_coCovar <- coCovar(strat_2_eff$x, nodeSet = 'ACTORS')
+        #
+        rsiena_data <- sienaDataCreate(list(self$bipartite_rsienaDV, self$component_1_coCovar, self$strat_1_coCovar,self$strat_2_coCovar), nodeSets = list(ACTORS, COMPONENTS))
+        return(rsiena_data)
+      }
+      if (ncomponent==1 & nstrat==3 ) 
+      {
+        strat_2_eff <- structure_model$dv_bipartite$coCovars[[ stratDV_ids[2] ]]
+        self$strat_2_coCovar <- coCovar(strat_2_eff$x, nodeSet = 'ACTORS')
+        strat_3_eff <- structure_model$dv_bipartite$coCovars[[ stratDV_ids[3] ]]
+        self$strat_3_coCovar <- coCovar(strat_3_eff$x, nodeSet = 'ACTORS')
+        #
+        rsiena_data <- sienaDataCreate(list(self$bipartite_rsienaDV, self$component_1_coCovar, self$strat_1_coCovar,self$strat_2_coCovar,self$strat_3_coCovar), nodeSets = list(ACTORS, COMPONENTS))
+        return(rsiena_data)
+      }
+      if (ncomponent==1 & nstrat==4 ) 
+      {
+        strat_2_eff <- structure_model$dv_bipartite$coCovars[[ stratDV_ids[2] ]]
+        self$strat_2_coCovar <- coCovar(strat_2_eff$x, nodeSet = 'ACTORS')
+        strat_3_eff <- structure_model$dv_bipartite$coCovars[[ stratDV_ids[3] ]]
+        self$strat_3_coCovar <- coCovar(strat_3_eff$x, nodeSet = 'ACTORS')
+        strat_4_eff <- structure_model$dv_bipartite$coCovars[[ stratDV_ids[4] ]]
+        self$strat_4_coCovar <- coCovar(strat_4_eff$x, nodeSet = 'ACTORS')
+        #
+        rsiena_data <- sienaDataCreate(list(self$bipartite_rsienaDV, self$component_1_coCovar, self$strat_1_coCovar,self$strat_2_coCovar,self$strat_3_coCovar,self$strat_4_coCovar), nodeSets = list(ACTORS, COMPONENTS))
+        return(rsiena_data)
+      }
+      if (ncomponent==1 & nstrat==5 ) 
+      {
+        strat_2_eff <- structure_model$dv_bipartite$coCovars[[ stratDV_ids[2] ]]
+        self$strat_2_coCovar <- coCovar(strat_2_eff$x, nodeSet = 'ACTORS')
+        strat_3_eff <- structure_model$dv_bipartite$coCovars[[ stratDV_ids[3] ]]
+        self$strat_3_coCovar <- coCovar(strat_3_eff$x, nodeSet = 'ACTORS')
+        strat_4_eff <- structure_model$dv_bipartite$coCovars[[ stratDV_ids[4] ]]
+        self$strat_4_coCovar <- coCovar(strat_4_eff$x, nodeSet = 'ACTORS')
+        strat_5_eff <- structure_model$dv_bipartite$coCovars[[ stratDV_ids[5] ]]
+        self$strat_5_coCovar <- coCovar(strat_5_eff$x, nodeSet = 'ACTORS')
+        #
+        rsiena_data <- sienaDataCreate(list(self$bipartite_rsienaDV, self$component_1_coCovar, self$strat_1_coCovar,self$strat_2_coCovar,self$strat_3_coCovar,self$strat_4_coCovar,self$strat_5_coCovar), nodeSets = list(ACTORS, COMPONENTS))
+        return(rsiena_data)
+      }
+      #
+      ## 2 Component --------------------------------------
+      component_2_eff <- structure_model$dv_bipartite$coCovars[[ componentDV_ids[2] ]]
+      self$component_2_coCovar <- coCovar(component_2_eff$x, nodeSet = 'COMPONENTS')
+      ##----------------------------------------------------
+      #
+      if (ncomponent>=2 & nstrat==1 ) 
+      {
+        rsiena_data <- sienaDataCreate(list(self$bipartite_rsienaDV, self$component_1_coCovar,self$component_2_coCovar, self$strat_1_coCovar), nodeSets = list(ACTORS, COMPONENTS))
+        return(rsiena_data)
+      }
+      if (ncomponent>=2 & nstrat==2 ) 
+      {
+        strat_2_eff <- structure_model$dv_bipartite$coCovars[[ stratDV_ids[2] ]]
+        self$strat_2_coCovar <- coCovar(strat_2_eff$x, nodeSet = 'ACTORS')
+        #
+        rsiena_data <- sienaDataCreate(list(self$bipartite_rsienaDV, self$component_1_coCovar,self$component_2_coCovar,  self$strat_1_coCovar,self$strat_2_coCovar), nodeSets = list(ACTORS, COMPONENTS))
+        return(rsiena_data)
+      }
+      if (ncomponent>=2 & nstrat==3 ) 
+      {
+        strat_2_eff <- structure_model$dv_bipartite$coCovars[[ stratDV_ids[2] ]]
+        self$strat_2_coCovar <- coCovar(strat_2_eff$x, nodeSet = 'ACTORS')
+        strat_3_eff <- structure_model$dv_bipartite$coCovars[[ stratDV_ids[3] ]]
+        self$strat_3_coCovar <- coCovar(strat_3_eff$x, nodeSet = 'ACTORS')
+        #
+        rsiena_data <- sienaDataCreate(list(self$bipartite_rsienaDV, self$component_1_coCovar,self$component_2_coCovar,  self$strat_1_coCovar,self$strat_2_coCovar,self$strat_3_coCovar), nodeSets = list(ACTORS, COMPONENTS))
+        return(rsiena_data)
+      }
+      if (ncomponent>=2 & nstrat==4 ) 
+      {
+        strat_2_eff <- structure_model$dv_bipartite$coCovars[[ stratDV_ids[2] ]]
+        self$strat_2_coCovar <- coCovar(strat_2_eff$x, nodeSet = 'ACTORS')
+        strat_3_eff <- structure_model$dv_bipartite$coCovars[[ stratDV_ids[3] ]]
+        self$strat_3_coCovar <- coCovar(strat_3_eff$x, nodeSet = 'ACTORS')
+        strat_4_eff <- structure_model$dv_bipartite$coCovars[[ stratDV_ids[4] ]]
+        self$strat_4_coCovar <- coCovar(strat_4_eff$x, nodeSet = 'ACTORS')
+        #
+        rsiena_data <- sienaDataCreate(list(self$bipartite_rsienaDV, self$component_1_coCovar,self$component_2_coCovar,  self$strat_1_coCovar,self$strat_2_coCovar,self$strat_3_coCovar,self$strat_4_coCovar), nodeSets = list(ACTORS, COMPONENTS))
+        return(rsiena_data)
+      }
+      if (ncomponent>=2 & nstrat==5 ) 
+      {
+        strat_2_eff <- structure_model$dv_bipartite$coCovars[[ stratDV_ids[2] ]]
+        self$strat_2_coCovar <- coCovar(strat_2_eff$x, nodeSet = 'ACTORS')
+        strat_3_eff <- structure_model$dv_bipartite$coCovars[[ stratDV_ids[3] ]]
+        self$strat_3_coCovar <- coCovar(strat_3_eff$x, nodeSet = 'ACTORS')
+        strat_4_eff <- structure_model$dv_bipartite$coCovars[[ stratDV_ids[4] ]]
+        self$strat_4_coCovar <- coCovar(strat_4_eff$x, nodeSet = 'ACTORS')
+        strat_5_eff <- structure_model$dv_bipartite$coCovars[[ stratDV_ids[5] ]]
+        self$strat_5_coCovar <- coCovar(strat_5_eff$x, nodeSet = 'ACTORS')
+        #
+        rsiena_data <- sienaDataCreate(list(self$bipartite_rsienaDV, self$component_1_coCovar,self$component_2_coCovar,  self$strat_1_coCovar,self$strat_2_coCovar,self$strat_3_coCovar,self$strat_4_coCovar,self$strat_5_coCovar), nodeSets = list(ACTORS, COMPONENTS))
+        return(rsiena_data)
+      }
+      #
+    },
+    
     #
-    init_rsiena_model_from_bipartite_matrix_structure_model = function(bipartite_matrix, structure_model) {
-      # cat('\n\nDEBUG: called init_rsiena_model_from_bipartite_matrix_structure_model()\n\n')
+    init_rsiena_model_from_structure_model_bipartite_matrix = function(structure_model, bipartite_matrix, 
+                                                                       rand_seed=123) {
+      set.seed(rand_seed)
+      # cat('\n\nDEBUG: called init_rsiena_model_from_structure_model_bipartite_matrix()\n\n')
       #
       ACTORS     <- sienaNodeSet(self$M, nodeSetName="ACTORS")
       COMPONENTS <- sienaNodeSet(self$N, nodeSetName="COMPONENTS")
       #
       self$config_structure_model <- structure_model
       structure_model_dvs <- names(structure_model)
-      #
-      # hasVarCovars <- 'varCovars' %in% names(structure_model$dv_bipartite)
-      hasCoCovars <- 'coCovars' %in% names(structure_model$dv_bipartite)
-      
-      
-      print('DEBUG:  hasCoCovars: ')
-      print(hasCoCovars)
-      
+
       ## Simulation baseline nets should not be same; make one small change (toggle one dyad)
       ## @see https://www.stats.ox.ac.uk/~snijders/siena/NetworkSimulation.R
       bipartite_matrix1 <- bipartite_matrix
@@ -689,17 +920,7 @@ SaomNkRSienaBiEnv <- R6Class(
       if ('dv_bipartite' %in% structure_model_dvs)
       {
         # strat_mat_varCovar <- varCovar(strat_eff$x, nodeSet = 'ACTORS')
-        if (hasCoCovars) {
-          ##
-          cat('DEBUG:  hasCoCovars in init_rsiena_model_from_bipartite_matrix_structure_model() ')
-          ##
-          dv_name <- structure_model$dv_bipartite$name
-          strat_eff <- structure_model$dv_bipartite$coCovars[[1]]
-          self$strat_coCovar <- coCovar(strat_eff$x, nodeSet = 'ACTORS')
-          self$rsiena_data <- sienaDataCreate(list(self$bipartite_rsienaDV, self$strat_coCovar), nodeSets = list(ACTORS, COMPONENTS))
-        } else {
-          self$rsiena_data <- sienaDataCreate(list(self$bipartite_rsienaDV), nodeSets = list(ACTORS, COMPONENTS))
-        }
+        self$rsiena_data <- self$get_rsiena_data_from_structure_model(structure_model)
       }
       else 
       {
@@ -724,6 +945,61 @@ SaomNkRSienaBiEnv <- R6Class(
       # print(self)
       
     },
+    
+    #
+    init_multiwave_rsiena_model_from_structure_model_bipartite_matrix = function(structure_model, 
+                                                                                 bipartite_matrix1, 
+                                                                                 bipartite_matrix2,
+                                                                                 rand_seed=123) {
+      set.seed(rand_seed)
+      # cat('\n\nDEBUG: called init_rsiena_model_from_structure_model_bipartite_matrix()\n\n')
+      #
+      ACTORS     <- sienaNodeSet(self$M, nodeSetName="ACTORS")
+      COMPONENTS <- sienaNodeSet(self$N, nodeSetName="COMPONENTS")
+      #
+      self$config_structure_model <- structure_model
+      structure_model_dvs <- names(structure_model)
+      #
+      # hasVarCovars <- 'varCovars' %in% names(structure_model$dv_bipartite)
+      hasCoCovars <- 'coCovars' %in% names(structure_model$dv_bipartite)
+      #
+      print('DEBUG:  hasCoCovars: ')
+      print(hasCoCovars)
+      ## Simulation baseline nets should not be same; make one small change (toggle one dyad)
+      ## @see https://www.stats.ox.ac.uk/~snijders/siena/NetworkSimulation.R
+      #
+      if(identical(bipartite_matrix1, bipartite_matrix2)) {
+        .i <- sample(1:self$M, 1)
+        .j <- sample(1:self$N, 1)
+        bipartite_matrix2 <-  toggleBiMat(bipartite_matrix2, .i, .j )
+      }
+      ##
+      social_matrix1 <- bipartite_matrix1 %*% t(bipartite_matrix1)
+      search_matrix1 <- t(bipartite_matrix1) %*% bipartite_matrix1
+      ##
+      social_matrix2 <- bipartite_matrix2 %*% t(bipartite_matrix2)
+      search_matrix2 <- t(bipartite_matrix2) %*% bipartite_matrix2
+      ## init networks to duplicate for the init arrays (two network waves)
+      array_bi_net <- array(c(bipartite_matrix1, bipartite_matrix2), dim=c(self$M, self$N, 2) )
+      array_social <- array(c(social_matrix1, social_matrix2), dim=c(self$M, self$M, 2) )
+      array_search <- array(c(search_matrix1, search_matrix2), dim=c(self$N, self$N, 2) )
+      ## Drop information above binary ties for RSiena DVs
+      array_bi_net[ array_bi_net > 1 ] <- 1
+      array_social[ array_social > 1 ] <- 1
+      array_search[ array_search > 1 ] <- 1
+      if ('dv_social' %in% structure_model_dvs ) {
+        self$social_rsienaDV <- sienaDependent(array_social, type='oneMode', nodeSet = 'ACTORS', allowOnly = F)
+      }
+      if ('dv_search' %in% structure_model_dvs) {
+        self$search_rsienaDV <- sienaDependent(array_search, type='oneMode', nodeSet = 'COMPONENTS', allowOnly = F)
+      }
+      if ('dv_bipartite' %in% structure_model_dvs) {
+        self$bipartite_rsienaDV <- sienaDependent(array_bi_net, type='bipartite', nodeSet =c('ACTORS', 'COMPONENTS'), allowOnly = F)
+      }
+      ##---------------------------------------------
+      self$rsiena_data <- self$get_rsiena_data_from_structure_model(structure_model)
+    },
+    
     
     ##
     ##**TODO**
@@ -780,7 +1056,7 @@ SaomNkRSienaBiEnv <- R6Class(
     search_rsiena_init = function(structure_model, get_eff_doc = FALSE) {
       ##--1. RSiena Model
       ##  1.1. INIT: bipartite matrix --> RSiena model
-      self$init_rsiena_model_from_bipartite_matrix_structure_model(self$bipartite_matrix, structure_model)
+      self$init_rsiena_model_from_structure_model_bipartite_matrix(self$bipartite_matrix, structure_model, self$rsiena_env_seed)
       
       print('self$rsiena_data : ')
       print(self$rsiena_data)
@@ -802,6 +1078,36 @@ SaomNkRSienaBiEnv <- R6Class(
       # ##  3.1. set payoff rules (formulas)
       # self$config_payoff_formulas <- payoff_formulas
     },
+    
+    # #
+    # search_rsiena_multiwave_init = function(structure_model, bipartite_matrix_0, bipartite_matrix_1, get_eff_doc = FALSE) {
+    #   ##--1. RSiena Model
+    #   ##  1.1. INIT: bipartite matrix --> RSiena model
+    #   self$init_multiwave_rsiena_model_from_structure_model_bipartite_matrix(structure_model, 
+    #                                                                            bipartite_matrix_0, 
+    #                                                                            bipartite_matrix_1, 
+    #                                                                            self$rsiena_env_seed)
+    #   
+    #   print('self$rsiena_data : ')
+    #   print(self$rsiena_data)
+    #   
+    #   ##  1.2. INIT effects list in simulation model (in RSiena model)
+    #   self$rsiena_effects <- getEffects(self$rsiena_data)
+    #   
+    #   # Effects Documentation
+    #   if(get_eff_doc)
+    #     effectsDocumentation(self$rsiena_effects)
+    #   ##-----------------------------
+    #   
+    #   # stop('DEBUG XXXXXXXXXXXXX')
+    #   ##--2. NETWORK: STRUCTURE EVOLUTION (structure_Model)-----
+    #   ##  2.1. Add effects from model objective function list
+    #   self$add_rsiena_effects(structure_model)
+    #   
+    #   # ##--3. SEARCH (FITNESS): PAYOFFS (payoff_formulas) ----------
+    #   # ##  3.1. set payoff rules (formulas)
+    #   # self$config_payoff_formulas <- payoff_formulas
+    # },
     
     
     #
@@ -851,7 +1157,7 @@ SaomNkRSienaBiEnv <- R6Class(
       print(screenreg(list(self$rsiena_model), single.row = T, digits = digits))
 
       ## update simulation object environment from RSiena simulation model
-      new_bi_env_igraph <- self$get_bipartite_igraph_from_rsiena_sim()
+      new_bi_env_igraph <- self$get_bipartite_igraph_from_rsiena_model()
       #
       self$set_system_from_bipartite_igraph( new_bi_env_igraph )
 
@@ -861,22 +1167,418 @@ SaomNkRSienaBiEnv <- R6Class(
 
       # stop('OK_DEBG')
     },  
+    
+    
+    
+    # # Extend existing simulation environment
+    # search_rsiena_extend = function(iterations, returnDeps = TRUE) {
+    #   self$rsiena_algorithm$n3 <- iterations
+    #   self$rsiena_model <- siena07(self$rsiena_algorithm, data = self$rsiena_data, effects = self$rsiena_effects,
+    #                                prevAns = self$rsiena_model,
+    #                                batch = TRUE, returnDeps = returnDeps)
+    #   ##
+    #   mod_summary <- summary(self$rsiena_model)
+    #   if(!is.null(mod_summary)) 
+    #     print(mod_summary)
+    #   ##
+    #   print(screenreg(list(self$rsiena_model), single.row = T, digits = 3))
+    # },
+    
+    
+    ## Single Simulation Run
+    search_rsiena_run = function(structure_model, 
+                                 iterations=1000, 
+                                 returnDeps=TRUE, returnChains=TRUE, ## TRUE=simulation only
+                                 n_snapshots=1, 
+                                 plot_save = TRUE, overwrite=TRUE, 
+                                 rsiena_phase2_nsub=1, rsiena_n2start_scale=1,
+                                 get_eff_doc = FALSE, digits=3,
+                                 run_seed=123
+                                 ) {
+      set.seed(run_seed)
+      self$rsiena_run_seed <- run_seed
+      if( overwrite | is.null(self$rsiena_model) ) {
+        ## 1. Init simulation
+        # cat(sprintf('\nDEBUG RUN: 1. search_rsiena_init\n'))
+        self$search_rsiena_init(structure_model, get_eff_doc)
+        ## 2. Execute simulation
+        # cat(sprintf('\nDEBUG RUN: 2. search_rsiena_execute_sim\n'))
+        self$search_rsiena_execute_sim(iterations,
+                                       returnDeps=returnDeps,
+                                       returnChains=returnChains,
+                                       rsiena_phase2_nsub=rsiena_phase2_nsub,
+                                       rsiena_n2start_scale=rsiena_n2start_scale, 
+                                       digits=digits,
+                                       rand_seed=run_seed)
+        ## 3. Process chain of simulation ministeps
+        # cat(sprintf('\nDEBUG RUN: 3. search_rsiena_process_ministep_chain\n'))
+        self$search_rsiena_process_ministep_chain()
+        ## 4. Process actor statistics (e.g., utility)
+        # cat(sprintf('\nDEBUG RUN: 4. search_rsiena_process_actor_stats\n'))
+        self$search_rsiena_process_stats()
+      } else {
+        # self$search_rsiena_extend(objective_list, iterations)
+        stop('_extend() method not yet implemented.')
+      }
+      # # self$visualize_system_bi_env_rsiena(plot_save = plot_save)
+      # self$get_rsiena_model_snapshots(n=n_snapshots)
+    },
+    
+    # ## Single Simulation Run
+    # search_rsiena_multiwave_run = function(structure_model, 
+    #                                        waves=4,
+    #                                        iterations=1000, 
+    #                                        returnDeps=TRUE, returnChains=TRUE, ## TRUE=simulation only
+    #                                        n_snapshots=1, 
+    #                                        plot_save = TRUE, overwrite=TRUE, 
+    #                                        rsiena_phase2_nsub=1, rsiena_n2start_scale=1,
+    #                                        get_eff_doc = FALSE, digits=3,
+    #                                        run_seed=123
+    # ) {
+    #   
+    #   set.seed(run_seed)
+    #   self$rsiena_run_seed <- run_seed
+    #   ## 1. Init simulation
+    #   # cat(sprintf('\nDEBUG RUN: 1. search_rsiena_init\n'))
+    #   self$search_rsiena_init(structure_model, get_eff_doc=FALSE)
+    #   ## 2. Execute simulation
+    #   # cat(sprintf('\nDEBUG RUN: 2. search_rsiena_execute_sim\n'))
+    #   self$search_rsiena_execute_multiwave_sim(iterations,
+    #                                            returnDeps=returnDeps,
+    #                                            returnChains=returnChains,
+    #                                            rsiena_phase2_nsub=rsiena_phase2_nsub,
+    #                                            rsiena_n2start_scale=rsiena_n2start_scale, 
+    #                                            digits=digits,
+    #                                            rand_seed=run_seed)
+    #   ## 3. Process chain of simulation ministeps
+    #   # cat(sprintf('\nDEBUG RUN: 3. search_rsiena_process_ministep_chain\n'))
+    #   self$search_rsiena_process_ministep_chain()
+    #   ## 4. Process actor statistics (e.g., utility)
+    #   # cat(sprintf('\nDEBUG RUN: 4. search_rsiena_process_stats\n'))
+    #   self$search_rsiena_process_stats()
+    #   
+    #   self$rsiena_waves <- list()
+    #   
+    #   for (w in 1:waves) {
+    #     ## DYNAMIC DECISIONS (STRATEGY COVARIATE CHANGES)
+    #     # structure_model$coCovars[[1]]$x <- c(0,0,0,0,1,1,1,1) ## new strategy or function for time-based/decision-rule strategy choice
+    #     #
+    #     ## 1. Init simulation
+    #     # cat(sprintf('\nDEBUG RUN: 1. search_rsiena_init\n'))
+    #     self$search_rsiena_init(structure_model, get_eff_doc=FALSE)
+    #     ## 2. Execute simulation
+    #     # cat(sprintf('\nDEBUG RUN: 2. search_rsiena_execute_sim\n'))
+    #     self$search_rsiena_execute_multiwave_sim(iterations,
+    #                                              returnDeps=returnDeps,
+    #                                              returnChains=returnChains,
+    #                                              rsiena_phase2_nsub=rsiena_phase2_nsub,
+    #                                              rsiena_n2start_scale=rsiena_n2start_scale, 
+    #                                              digits=digits,
+    #                                              rand_seed=run_seed)
+    #     ## 3. Process chain of simulation ministeps
+    #     # cat(sprintf('\nDEBUG RUN: 3. search_rsiena_process_ministep_chain\n'))
+    #     self$search_rsiena_process_ministep_chain()
+    #     ## 4. Process actor statistics (e.g., utility)
+    #     # cat(sprintf('\nDEBUG RUN: 4. search_rsiena_process_stats\n'))
+    #     self$search_rsiena_process_stats()
+    #     
+    #     self$rsiena_waves[[w]] <- list(
+    #       rsiena_model = self$rsiena_model,
+    #       actor_stats = self$actor_stats
+    #     )
+    #     
+    #   }
+    #   
+    #   cat(sprintf('\nSimulated %s network waves.\n', waves))
+    #   
+    # },
+    
+    
+    #**TODO**
+    search_rsiena_multiwave_run = function(structure_model,
+                                           waves=2, 
+                                           iterations=1000, 
+                                           returnDeps=T, 
+                                           returnChains=T,
+                                           rsiena_phase2_nsub=1, rsiena_n2start_scale=1, 
+                                           digits=3,
+                                           rand_seed=123) {
+      bipartite_matrix_0 <- self$bipartite_matrix
+      ##--1. INIT RSiena Model: set $rsiena_data --------
+      self$init_rsiena_model_from_structure_model_bipartite_matrix(structure_model, bipartite_matrix_0, self$rsiena_env_seed)
+      #
+      print('self$rsiena_data : ')
+      print(self$rsiena_data)
+      ##  2. Init effects
+      self$rsiena_effects <- getEffects(self$rsiena_data)
+      ##  3. Add effects from structure_model list
+      self$add_rsiena_effects(structure_model)
+      ##  4. RSiena Algorithm 
+      self$rsiena_algorithm <- sienaAlgorithmCreate(projname=sprintf('%s_%s',self$SIM_NAME,self$TIMESTAMP),
+                                                    simOnly = T,
+                                                    nsub = rsiena_phase2_nsub,
+                                                    # n2start = rsiena_n2start_scale * 2.52 * (7+sum(self$rsiena_effects$include)),
+                                                    n3 = iterations,
+                                                    seed = rand_seed)
+      ## 5. Run RSiena simulation
+      self$rsiena_model <- siena07(self$rsiena_algorithm,
+                                   data = self$rsiena_data, 
+                                   effects = self$rsiena_effects,
+                                   batch = TRUE,
+                                   returnDeps = returnDeps, 
+                                   returnChains = returnChains,
+                                   returnDataFrame = TRUE, ##**TODO** CHECK
+                                   returnLoglik = TRUE #,  ##**TODO** CHECK
+      )   # returnChains = returnChains
+      
+      # Summarize and plot results
+      mod_summary <- summary(self$rsiena_model)
+      if(!is.null(mod_summary))
+        print(mod_summary)
+      # plot(self$rsiena_model)
+      print(screenreg(list(self$rsiena_model), single.row = T, digits = digits))
+      
+      # 6. Update System
+      ## update simulation object environment from RSiena simulation model
+      new_bi_env_igraph <- self$get_bipartite_igraph_from_rsiena_model()
+      self$set_system_from_bipartite_igraph( new_bi_env_igraph )
+      
+      # sink() ## write output text to file
+      for (w in 1:waves){
+        #
+        bipartite_matrix_previous <- if(w == 1){ bipartite_matrix_0 }else{ self$bipartite_matrix_waves[[w-1]] }
+        ##--1. INIT RSiena Model--------
+        self$init_multiwave_rsiena_model_from_structure_model_bipartite_matrix(structure_model,
+                                                                               bipartite_matrix_previous, ## matrix1 (previous)
+                                                                               self$bipartite_matrix,     ## matrix2 (latest)
+                                                                               self$rsiena_env_seed)
+        print('self$rsiena_data : ')
+        print(self$rsiena_data)
+        ##  2. Init effects
+        self$rsiena_effects <- getEffects(self$rsiena_data)
+        ##  3. Add effects from model objective function list
+        self$add_rsiena_effects(structure_model)
+        ##  4. RSiena Algorithm
+        self$rsiena_algorithm <- sienaAlgorithmCreate(projname=sprintf('%s_%s',self$SIM_NAME,self$TIMESTAMP),
+                                                      simOnly = T,
+                                                      nsub = rsiena_phase2_nsub,
+                                                      # n2start = rsiena_n2start_scale * 2.52 * (7+sum(self$rsiena_effects$include)),
+                                                      n3 = iterations,
+                                                      seed = rand_seed)
+        ## 5. Run RSiena simulation
+        self$rsiena_model <- siena07(self$rsiena_algorithm,
+                                     data = self$rsiena_data, 
+                                     effects = self$rsiena_effects,
+                                     batch = TRUE,
+                                     returnDeps = returnDeps, 
+                                     returnChains = returnChains,
+                                     returnDataFrame = TRUE, ##**TODO** CHECK
+                                     returnLoglik = TRUE #,  ##**TODO** CHECK
+        )   # returnChains = returnChains
+        
+        # Summarize and plot results
+        mod_summary <- summary(self$rsiena_model)
+        if(!is.null(mod_summary))
+          print(mod_summary)
+        # plot(self$rsiena_model)
+        print(screenreg(list(self$rsiena_model), single.row = T, digits = digits))
+        
+        ## 6. Update System
+        ## update simulation object environment from RSiena simulation model
+        new_bi_env_igraph <- self$get_bipartite_igraph_from_rsiena_model()
+        #
+        self$set_system_from_bipartite_igraph( new_bi_env_igraph )
+        #
+        # # self$plot_bipartite_system_from_mat(self$bipartite_matrix, iterations, plot_save = T)
+        # self$visualize_system_bi_env_rsiena(plot_save = TRUE)
+        
+        ##---------- 2. Waves 2,3,4,... in Multiwave Simulation -------------------
+        
+        self$rsiena_model_waves[[w]] <- self$rsiena_model
+        self$bipartite_matrix_waves[[w]] <- self$bipartite_matrix
+        
+      }
+      
+    },
+    
+    #**TODO**
+    search_rsiena_multiwave_extend = function(waves=1, 
+                                               iterations=1000, 
+                                               returnDeps=T, 
+                                               returnChains=T,
+                                               rsiena_phase2_nsub=1, rsiena_n2start_scale=1, 
+                                               digits=3,
+                                               rand_seed=123) {
+      ##  4. RSiena Algorithm 
+      self$rsiena_algorithm <- sienaAlgorithmCreate(projname=sprintf('%s_%s',self$SIM_NAME,self$TIMESTAMP),
+                                                    simOnly = T,
+                                                    nsub = rsiena_phase2_nsub,
+                                                    # n2start = rsiena_n2start_scale * 2.52 * (7+sum(self$rsiena_effects$include)),
+                                                    n3 = iterations,
+                                                    seed = rand_seed)
+      ## 5. Run RSiena simulation
+      self$rsiena_model <- siena07(self$rsiena_algorithm,
+                                   data = self$rsiena_data, 
+                                   effects = self$rsiena_effects,
+                                   batch = TRUE,
+                                   returnDeps = returnDeps, 
+                                   returnChains = returnChains,
+                                   returnDataFrame = TRUE, ##**TODO** CHECK
+                                   returnLoglik = TRUE ,  ##**TODO** CHECK
+                                   prevAns= self$rsiena_model
+      )   # returnChains = returnChains
+      
+      # Summarize and plot results
+      mod_summary <- summary(self$rsiena_model)
+      if(!is.null(mod_summary))
+        print(mod_summary)
+      # plot(self$rsiena_model)
+      print(screenreg(list(self$rsiena_model), single.row = T, digits = digits))
+      
+      # 6. Update System
+      ## update simulation object environment from RSiena simulation model
+      new_bi_env_igraph <- self$get_bipartite_igraph_from_rsiena_model()
+      self$set_system_from_bipartite_igraph( new_bi_env_igraph )
+      
+      # # sink() ## write output text to file
+      # for (w in 1:waves){
+      #   #
+      #   bipartite_matrix_previous <- if(w == 1){ bipartite_matrix_0 }else{ self$bipartite_matrix_waves[[w-1]] }
+      #   ##--1. INIT RSiena Model--------
+      #   self$init_multiwave_rsiena_model_from_structure_model_bipartite_matrix(structure_model,
+      #                                                                          bipartite_matrix_previous, ## matrix1 (previous)
+      #                                                                          self$bipartite_matrix,     ## matrix2 (latest)
+      #                                                                          self$rsiena_env_seed)
+      #   print('self$rsiena_data : ')
+      #   print(self$rsiena_data)
+      #   ##  2. Init effects
+      #   self$rsiena_effects <- getEffects(self$rsiena_data)
+      #   ##  3. Add effects from model objective function list
+      #   self$add_rsiena_effects(structure_model)
+      #   ##  4. RSiena Algorithm
+      #   self$rsiena_algorithm <- sienaAlgorithmCreate(projname=sprintf('%s_%s',self$SIM_NAME,self$TIMESTAMP),
+      #                                                 simOnly = T,
+      #                                                 nsub = rsiena_phase2_nsub,
+      #                                                 # n2start = rsiena_n2start_scale * 2.52 * (7+sum(self$rsiena_effects$include)),
+      #                                                 n3 = iterations,
+      #                                                 seed = rand_seed)
+      #   ## 5. Run RSiena simulation
+      #   self$rsiena_model <- siena07(self$rsiena_algorithm,
+      #                                data = self$rsiena_data, 
+      #                                effects = self$rsiena_effects,
+      #                                batch = TRUE,
+      #                                returnDeps = returnDeps, 
+      #                                returnChains = returnChains,
+      #                                returnDataFrame = TRUE, ##**TODO** CHECK
+      #                                returnLoglik = TRUE #,  ##**TODO** CHECK
+      #   )   # returnChains = returnChains
+      #   
+      #   # Summarize and plot results
+      #   mod_summary <- summary(self$rsiena_model)
+      #   if(!is.null(mod_summary))
+      #     print(mod_summary)
+      #   # plot(self$rsiena_model)
+      #   print(screenreg(list(self$rsiena_model), single.row = T, digits = digits))
+      #   
+      #   ## 6. Update System
+      #   ## update simulation object environment from RSiena simulation model
+      #   new_bi_env_igraph <- self$get_bipartite_igraph_from_rsiena_model()
+      #   #
+      #   self$set_system_from_bipartite_igraph( new_bi_env_igraph )
+      #   #
+      #   # # self$plot_bipartite_system_from_mat(self$bipartite_matrix, iterations, plot_save = T)
+      #   # self$visualize_system_bi_env_rsiena(plot_save = TRUE)
+      #   
+      #   ##---------- 2. Waves 2,3,4,... in Multiwave Simulation -------------------
+      #   
+      #   self$rsiena_model_waves[[w]] <- self$rsiena_model
+      #   self$bipartite_matrix_waves[[w]] <- self$bipartite_matrix
+      #   
+      # }
+      
+    },
+    
+    
+    #
+    search_rsiena_multiwave_process_results = function() {
+      actor_wave_stats <- list()
+      actor_wave_util <- list()
+      actor_wave_util_diff <- list()
+      #
+      K_wave_A <- list()
+      K_wave_B1 <- list()
+      K_wave_B2 <- list()
+      K_wave_C <- list()
+      #
+      for (w in 1:length(self$rsiena_model_waves)) {
+        #
+        rsiena_model_w <- self$rsiena_model_waves[[ w ]]
+        #
+        bipartite_igraph_w <- self$get_bipartite_igraph_from_rsiena_model(rsiena_model_w)
+        #
+        self$set_system_from_bipartite_igraph( bipartite_igraph_w )
+        ## 3. Process chain of simulation ministeps
+        # cat(sprintf('\nDEBUG RUN: 3. search_rsiena_process_ministep_chain\n'))
+        self$search_rsiena_process_ministep_chain()
+        ## 4. Process actor statistics (e.g., utility)
+        # cat(sprintf('\nDEBUG RUN: 4. search_rsiena_process_stats\n'))
+        self$search_rsiena_process_stats()
+        ##**TODO**
+        actor_wave_stats[[w]]     <- self$actor_stats_df %>% mutate(wave_id=w)
+        actor_wave_util[[w]]      <- self$actor_util_df %>% mutate(wave_id=w)
+        actor_wave_util_diff[[w]] <- self$actor_util_diff_df %>% mutate(wave_id=w)
+        # #
+        # component_wave_stats[[w]] <- self$component_stats %>% mutate(wave_id=w)
+        # # self$actor_proj_wave_stats[[w]]     <- self$actor_proj_stats %>% mutate(wave_id=w)
+        # # self$component_proj_wave_stats[[w]] <- self$component_proj_stats %>% mutate(wave_id=w)
+        
+        K_wave_A[[w]]  <- self$K_A_df  %>% mutate(wave_id=w)
+        K_wave_B1[[w]] <- self$K_B1_df %>% mutate(wave_id=w)
+        K_wave_B2[[w]] <- self$K_B2_df %>% mutate(wave_id=w)
+        K_wave_C[[w]]  <- self$K_C_df  %>% mutate(wave_id=w)
+      }
+      
+      ##**TODO**
+      self$actor_wave_stats     <- data.table::rbindlist( actor_wave_stats )
+      self$actor_wave_util      <- data.table::rbindlist( actor_wave_util )
+      self$actor_wave_util_diff <- data.table::rbindlist( actor_wave_util_diff )
+      
+      # ##
+      # self$component_wave_stats <- data.table::rbindlist( component_wave_stats )
+      
+      self$K_wave_A  <- data.table::rbindlist( K_wave_A ) 
+      self$K_wave_B1 <- data.table::rbindlist( K_wave_B1 ) 
+      self$K_wave_B2 <- data.table::rbindlist( K_wave_B2 ) 
+      self$K_wave_C  <- data.table::rbindlist( K_wave_C ) 
+    },
+    
+    # #
+    # chain_stats = NULL,  ## 
+    # actor_stats = NULL,
+    # component_stats = NULL,
+    # actor_proj_stats = NULL,
+    # component_proj_stats = NULL,
+    # ##
+    # wave_stats_list = list(),
+    
       
     #
-    get_bipartite_igraph_from_rsiena_sim = function(sim_iteration = NULL) {
-      new_bi_env_mat <- self$get_bipartite_matrix_from_rsiena_sim(sim_iteration)
+    get_bipartite_igraph_from_rsiena_model = function(rsiena_model = NULL, sim_iteration = NULL) {
+      rsiena_model <- if(is.null(rsiena_model)) { self$rsiena_model } else { rsiena_model }
+      new_bi_env_mat <- self$get_bipartite_matrix_from_rsiena_model(rsiena_model, sim_iteration)
       new_bi_env_igraph <- igraph::graph_from_biadjacency_matrix(new_bi_env_mat, directed = T, weighted = T, mode = 'out') ##**TODO: CHECK** all vs. out
       return(new_bi_env_igraph)
     },
     
     #
-    get_bipartite_matrix_from_rsiena_sim = function(sim_iteration = NULL, wave_id=1) {
+    get_bipartite_matrix_from_rsiena_model = function(rsiena_model = NULL, sim_iteration = NULL, wave_id=1) {
+      rsiena_model <- if(is.null(rsiena_model)) { self$rsiena_model } else { rsiena_model }
       ######### UPDATE SYSTEM ENVIRONMENT SNAPSHOT FROM EVOLVED Bipartite Network DV #####################
-      if (! length(self$rsiena_model$sims) )
-        stop('Run RSiena simulations to set rsiena_model$sims before get_bipartite_matrix_from_rsiena_sim.')
-      # sim_id_last <- length( self$rsiena_model$sims ) ##
+      if (! length(rsiena_model$sims) )
+        stop('Run RSiena simulations to set rsiena_model$sims before get_bipartite_matrix_from_rsiena_model.')
+      # sim_id_last <- length( rsiena_model$sims ) ##
       sim_id <- ifelse(is.null(sim_iteration), 
-                       length(self$rsiena_model$sims), ## default current state is the last simulation in sims list
+                       length(rsiena_model$sims), ## default current state is the last simulation in sims list
                        sim_iteration)
       bi_env_dv_id <- which( names(self$config_structure_model) == 'dv_bipartite' )
       ##
@@ -884,12 +1586,12 @@ SaomNkRSienaBiEnv <- R6Class(
       # components <- 1:self$N
       MplusN <- self$M + self$N
       ## Get DV (bi-partite network) from simulation iteration=sim_id
-      el_bi_env <- self$rsiena_model$sims[[ sim_id ]][[ wave_id ]][[ bi_env_dv_id ]]$`1`
+      el_bi_env <- rsiena_model$sims[[ sim_id ]][[ wave_id ]][[ bi_env_dv_id ]]$`1`
       ## update numbering of second mode (the N component integer names shift upward by the number of actors M to match bipartite naming)
       el_bi_env[,2] <- el_bi_env[,2] + self$M
       ### get networks from other prjected space ties 
-      # el_proj1  <- self$rsiena_model$sims[[1]][[1]][[1]]$`1` ## Social network
-      # el_proj2  <- self$rsiena_model$sims[[1]][[1]][[2]]$`1` ## 
+      # el_proj1  <- rsiena_model$sims[[1]][[1]][[1]]$`1` ## Social network
+      # el_proj2  <- rsiena_model$sims[[1]][[1]][[2]]$`1` ## 
       # el_proj2 <- el_proj2 + self$M
       #############
       ## Undirected --> Upper right rectangle of full bipartite matrix
@@ -951,6 +1653,10 @@ SaomNkRSienaBiEnv <- R6Class(
       stats_li <- list()
       util_li  <- list()
       util_diff_li <- list()
+      K_A_li <- list()
+      K_B1_li <- list()
+      K_B2_li <- list()
+      K_C_li <- list()
       # bi_env_long <- data.frame()
       # statdf <- data.frame()
       # utildf <- data.frame()
@@ -1016,6 +1722,27 @@ SaomNkRSienaBiEnv <- R6Class(
         ## update utility lag for next period difference
         util_lag <- util
         ######
+        
+        #
+        K_A_grid <- expand.grid(chain_step_id=i, actor_id=1:self$M)
+        # K_A_grid$value <- rowSums( bi_env_mat %*% t(bi_env_mat) , na.rm=T) ## WEIGHTED
+        K_A_grid$value <- apply( bi_env_mat %*% t(bi_env_mat), 1, function(x)sum(x>0, na.rm=T) )
+        K_A_li[[i]] <- K_A_grid
+        #
+        K_B1_grid <- expand.grid(chain_step_id=i, actor_id=1:self$M)
+        # K_B1_grid$value <- rowSums( bi_env_mat, na.rm=T)  ## WEIGHTED
+        K_B1_grid$value <- apply( bi_env_mat, 1, function(x)sum(x>0, na.rm=T))
+        K_B1_li[[i]] <- K_B1_grid
+        #
+        K_B2_grid <- expand.grid(chain_step_id=i, component_id=1:self$N)
+        # K_B2_grid$value <- colSums( bi_env_mat, na.rm=T)  ## WEIGHTED
+        K_B2_grid$value <- apply( bi_env_mat, 2, function(x)sum(x>0, na.rm=T))
+        K_B2_li[[i]] <- K_B2_grid
+        #
+        K_C_grid <- expand.grid(chain_step_id=i, component_id=1:self$N)
+        # K_C_grid$value <- colSums( t(bi_env_mat) %*% bi_env_mat  , na.rm=T)  ## WEIGHTED
+        K_C_grid$value <- apply( t(bi_env_mat) %*% bi_env_mat, 2, function(x)sum(x>0, na.rm=T))  ## WEIGHTED
+        K_C_li[[i]] <- K_C_grid
       }
       ##-----------------
       ## Actor Network Statistics long dataframe
@@ -1028,11 +1755,29 @@ SaomNkRSienaBiEnv <- R6Class(
       ## Actor Utility Difference long dataframe
       util_diff_df <- data.table::rbindlist( util_diff_li ) 
       util_diff_df$actor_id <- as.factor(util_diff_df$actor_id)
+      ##---
+      
+      K_A_df <- data.table::rbindlist( K_A_li ) 
+      K_A_df$actor_id <- as.factor(K_A_df$actor_id)
+      #
+      K_B1_df <- data.table::rbindlist( K_B1_li ) 
+      K_B1_df$actor_id <- as.factor(K_B1_df$actor_id)
+      #
+      K_B2_df <- data.table::rbindlist( K_B2_li ) 
+      K_B2_df$component_id <- as.factor(K_B2_df$component_id)
+      #
+      K_C_df <- data.table::rbindlist( K_C_li ) 
+      K_C_df$component_id <- as.factor(K_C_df$component_id)
+      
       #####---------------
       return(list(
         stats_df = stats_df,
         util_df = util_df,
         util_diff_df = util_diff_df,
+        K_A_df = K_A_df,
+        K_B1_df = K_B1_df,
+        K_B2_df = K_B2_df,
+        K_C_df = K_C_df,
         bi_env_arr = bi_env_arr
       ))
     },
@@ -1089,22 +1834,7 @@ SaomNkRSienaBiEnv <- R6Class(
       ##
       depvar <- 1
       period <- 1
-      ###--------
-      .getTieChangeAfterOneindexing <- function(x, N) {
-        ## already re-indexed id_from and id_to -- changing from C++ 0-index to R 1-index
-        dv_name <- x[3]
-        id_from <- x[4]
-        id_to   <- x[5]
-        if(dv_name == 'self$bipartite_rsienaDV') {
-          ## bipartite network after oneIndexing the node ids:  id_to==(N+1) means no tie 
-          return(ifelse(id_to == (N+1), FALSE, TRUE))
-        } else if (dv_name %in% c('self$social_rsienaDV','self$search_rsienaDV')) {
-          ## bipartite network after oneIndexing the node ids:  id_to==id_from means no tie
-          return(ifelse(id_from == id_to, FALSE, TRUE))
-        } else {
-          stop(sprintf('dv_name %s not implemented in .getTieChange()', dv_name))
-        }
-      }
+
       ###--------
       ## Bipatite network chain --> value Alter=m means that no change has occurred.
       ##** "chain[[run]][[depvar]][[period]][[ministep]]"**
@@ -1129,6 +1859,23 @@ SaomNkRSienaBiEnv <- R6Class(
       # print(chainDat)
       # print(head(chainDat))
       
+      ###--------
+      .getTieChangeAfterOneindexing <- function(x, N) {
+        ## already re-indexed id_from and id_to -- changing from C++ 0-index to R 1-index
+        dv_name <- x[3]
+        id_from <- x[4]
+        id_to   <- x[5]
+        if(dv_name == 'self$bipartite_rsienaDV') {
+          ## bipartite network after oneIndexing the node ids:  id_to==(N+1) means no tie 
+          return(ifelse(id_to == (N+1), FALSE, TRUE))
+        } else if (dv_name %in% c('self$social_rsienaDV','self$search_rsienaDV')) {
+          ## bipartite network after oneIndexing the node ids:  id_to==id_from means no tie
+          return(ifelse(id_from == id_to, FALSE, TRUE))
+        } else {
+          stop(sprintf('dv_name %s not implemented in .getTieChange()', dv_name))
+        }
+      }
+      
       names(chainDat) <- c('dv_type','dv_type_bin','dv_varname','id_from','id_to','beh_difference',
                            'reciprocal_rate','LogOptionSetProb', 'LogChoiceProb', 'diagonal','stability')
       # Set tie change by rules
@@ -1144,8 +1891,26 @@ SaomNkRSienaBiEnv <- R6Class(
     },
     
     #
-    search_rsiena_process_actor_stats = function() {
-      self$actor_stats <- self$get_chain_stats_list()
+    search_rsiena_process_stats = function() {
+      ##
+      # actor_stats_df = NULL,
+      # actor_util_df = NULL,
+      # actor_util_diff_df = NULL,
+      # ##
+      chain_stats_list <- self$get_chain_stats_list()
+      #
+      self$actor_stats_df      <- chain_stats_list$stats_df
+      self$actor_util_df       <- chain_stats_list$util_df
+      self$actor_util_diff_df  <- chain_stats_list$util_diff_df
+      ###
+      # self$component_stats      <- list() ##self$get_component_stats_list()
+      # self$actor_proj_stats     <- list() ##self$get_component_stats_list()
+      # self$component_proj_stats <- list() ##self$get_component_stats_list()
+      ###
+      self$K_A_df  <- chain_stats_list$K_A_df
+      self$K_B1_df <- chain_stats_list$K_B1_df
+      self$K_B2_df <- chain_stats_list$K_B2_df
+      self$K_C_df  <- chain_stats_list$K_C_df
     },
     
     
@@ -1302,60 +2067,909 @@ SaomNkRSienaBiEnv <- R6Class(
       
     },
     
-    # Extend existing simulation environment
-    search_rsiena_extend = function(iterations, returnDeps = TRUE) {
-      self$rsiena_algorithm$n3 <- iterations
-      self$rsiena_model <- siena07(self$rsiena_algorithm, data = self$rsiena_data, effects = self$rsiena_effects,
-                                  prevAns = self$rsiena_model,
-                                  batch = TRUE, returnDeps = returnDeps)
-      ##
-      mod_summary <- summary(self$rsiena_model)
-      if(!is.null(mod_summary)) 
-        print(mod_summary)
-      ##
-      print(screenreg(list(self$rsiena_model), single.row = T, digits = 3))
-    },
-  
-
-    ## Single Simulation Run
-    search_rsiena_run = function(structure_model, 
-                                 iterations=1000, 
-                                 returnDeps=TRUE, returnChains=TRUE, ## TRUE=simulation only
-                                 n_snapshots=1, 
-                                 plot_save = TRUE, overwrite=TRUE, 
-                                 rsiena_phase2_nsub=1, rsiena_n2start_scale=1,
-                                 get_eff_doc = FALSE, digits=3,
-                                 run_seed=123
-                                 ) {
-      set.seed(run_seed)
-      self$rsiena_run_seed <- run_seed
-      if( overwrite | is.null(self$rsiena_model) ) {
-        ## 1. Init simulation
-        # cat(sprintf('\nDEBUG RUN: 1. search_rsiena_init\n'))
-        self$search_rsiena_init(structure_model, get_eff_doc)
-        ## 2. Execute simulation
-        # cat(sprintf('\nDEBUG RUN: 2. search_rsiena_execute_sim\n'))
-        self$search_rsiena_execute_sim(iterations,
-                                       returnDeps=returnDeps,
-                                       returnChains=returnChains,
-                                       rsiena_phase2_nsub=rsiena_phase2_nsub,
-                                       rsiena_n2start_scale=rsiena_n2start_scale, 
-                                       digits=digits,
-                                       seed=run_seed)
-        ## 3. Process chain of simulation ministeps
-        # cat(sprintf('\nDEBUG RUN: 3. search_rsiena_process_ministep_chain\n'))
-        self$search_rsiena_process_ministep_chain()
-        ## 4. Process actor statistics (e.g., utility)
-        # cat(sprintf('\nDEBUG RUN: 4. search_rsiena_process_actor_stats\n'))
-        self$search_rsiena_process_actor_stats()
-      } else {
-        # self$search_rsiena_extend(objective_list, iterations)
-        stop('_extend() method not yet implemented.')
-      }
-      # # self$visualize_system_bi_env_rsiena(plot_save = plot_save)
-      # self$get_rsiena_model_snapshots(n=n_snapshots)
+    # Convenience function for plotting all relevant plots 
+    # or one plot by specifying plot 
+    search_rsiena_multiwave_plot = function(type=NA, 
+                                            rolling_window = 10, 
+                                            actor_ids=c(),
+                                            component_ids=c(),
+                                            wave_ids=c(),
+                                            thin_factor=1, 
+                                            thin_wave_factor=1,
+                                            smooth_method='loess',
+                                            show_utility_points=TRUE,
+                                            append_plot=FALSE,
+                                            histogram_position='identity',
+                                            scale_utility=TRUE,
+                                            return_plot=TRUE
+    ) {
+      # if (all(is.na(type)) |  'ministep_count' %in% type)
+      #   return(self$search_rsiena_plot_actor_ministep_count(rolling_window))
+      # if (all(is.na(type)) | type == 'utility')
+      #   return(self$search_rsiena_plot_actor_utility(rolling_window))
+      plist <- list()
+      # if (all(is.na(type)) |  'utility' %in% type)
+      #   plist[['utility']] <- self$search_rsiena_plot_actor_utility(actor_ids, thin_factor, smooth_method, show_utility_points, return_plot=T)
+      # 
+      if (all(is.na(type)) |  'K_4panel' %in% type)
+        plist[['K_4panel']] <- self$search_rsiena_multiwave_plot_K_4panel(actor_ids, component_ids, wave_ids, thin_factor, thin_wave_factor, smooth_method, show_utility_points, return_plot=T)
+      
+      if (all(is.na(type)) |  'K_A_strategy_summary' %in% type)
+        plist[['K_A_strategy_summary']] <- self$search_rsiena_multiwave_plot_K_A_strategy_summary(actor_ids, wave_ids, thin_factor, thin_wave_factor, smooth_method, show_utility_points, return_plot=T)
+      
+      if (all(is.na(type)) |  'K_B1_strategy_summary' %in% type)
+        plist[['K_B1_strategy_summary']] <- self$search_rsiena_multiwave_plot_K_B1_strategy_summary(actor_ids, wave_ids, thin_factor, thin_wave_factor, smooth_method, show_utility_points, return_plot=T)
+      
+      if (all(is.na(type)) |  'K_B2_strategy_summary' %in% type)
+        plist[['K_B2_strategy_summary']] <- self$search_rsiena_multiwave_plot_K_B2_strategy_summary(component_ids, wave_ids, thin_factor, thin_wave_factor, smooth_method, show_utility_points, return_plot=T)
+      
+      if (all(is.na(type)) |  'K_C_strategy_summary' %in% type)
+        plist[['K_C_strategy_summary']] <- self$search_rsiena_multiwave_plot_K_C_strategy_summary(component_ids, wave_ids, thin_factor, thin_wave_factor, smooth_method, show_utility_points, return_plot=T)
+      
+      
+      if (all(is.na(type)) |  'utility_strategy_summary' %in% type)
+        plist[['utility_strategy_summary']] <- self$search_rsiena_multiwave_plot_actor_utility_strategy_summary(actor_ids, wave_ids, thin_factor, thin_wave_factor, smooth_method, show_utility_points, scale_utility, return_plot=T)
+      
+      if (all(is.na(type)) |  'utility_by_strategy' %in% type)
+        plist[['utility_by_strategy']] <- self$search_rsiena_multiwave_plot_actor_utility_by_strategy(actor_ids, thin_factor, thin_wave_factor, smooth_method, show_utility_points, return_plot=T)
+      # 
+      # if (all(is.na(type)) |  'utility_density' %in% type)
+      #   plist[['utility_density']] <- self$search_rsiena_plot_actor_utility_density(return_plot=T)
+      # 
+      if (all(is.na(type)) |  'utility_density_by_strategy' %in% type)
+        plist[['utility_density_by_strategy']] <- self$search_rsiena_multiwave_plot_actor_utility_density_by_strategy(thin_wave_factor, return_plot=T)
+      # 
+      # if (all(is.na(type)) |  'utility_histogram_by_strategy' %in% type)
+      #   plist[['utility_histogram_by_strategy']] <- self$search_rsiena_plot_actor_utility_histogram_by_strategy(histogram_position, return_plot=T)
+      # 
+      # if (all(is.na(type)) |  'stability' %in% type)
+      #   plist[['stability']] <- self$search_rsiena_plot_stability() ##**TODO** Fix return plot
+      # 
+      #  SET plots 
+      self$multiwave_plots <- if(append_plot) { append(self$multiwave_plots, plist) } else { plist }
+      
+      # stop(sprintf('Plot type not implemented: %s', type))
+      if(return_plot)
+        return(plist)
     },
     
+    #
+    search_rsiena_multiwave_plot_K_4panel = function(actor_ids=c(), 
+                                                     component_ids=c(), 
+                                                     wave_ids=c(), 
+                                                     thin_factor=1, 
+                                                     thin_wave_factor=1, 
+                                                     smooth_method='loess',  ##"lm", "glm", "gam", "loess","auto"
+                                                     show_utility_points=T, 
+                                                     return_plot=FALSE
+                                                     ) {
+      K_A  <- self$search_rsiena_multiwave_plot_K_A_strategy_summary(actor_ids, wave_ids, thin_factor, thin_wave_factor, smooth_method, show_utility_points, show_legend=T, show_title=F, return_plot=T)
+      K_B1 <- self$search_rsiena_multiwave_plot_K_B1_strategy_summary(actor_ids, wave_ids, thin_factor, thin_wave_factor, smooth_method, show_utility_points, show_legend=F, show_title=T, return_plot=T)
+      K_B2 <- self$search_rsiena_multiwave_plot_K_B2_strategy_summary(component_ids, wave_ids, thin_factor, thin_wave_factor, smooth_method, show_utility_points, show_legend=F, show_title=T, return_plot=T)
+      K_C  <- self$search_rsiena_multiwave_plot_K_C_strategy_summary(component_ids, wave_ids, thin_factor, thin_wave_factor, smooth_method, show_utility_points, show_legend=T, show_title=F, return_plot=T)
+      # K_B1_leg <- self$search_rsiena_multiwave_plot_K_B1_strategy_summary(actor_ids, wave_ids, thin_factor, thin_wave_factor, smooth_method, show_utility_points, show_legend=T, show_title=F, return_plot=T)
+      # K_B2_leg <- self$search_rsiena_multiwave_plot_K_B2_strategy_summary(component_ids, wave_ids, thin_factor, thin_wave_factor, smooth_method, show_utility_points, show_legend=T, show_title=F, return_plot=T)
+      combined_plot <- ggarrange(
+        K_B1, K_B2, 
+        K_A, K_C,
+        nrow = 2, ncol = 2, 
+        widths = c(7, 7), # Adjust column widths
+        heights = c(7, 7),
+        common.legend = TRUE, # Share a common legend if needed
+        legend = "bottom"#,     # Place legend at the bottom
+        # align = 'v'
+      ) 
+      # # Extract legends
+      # legend_B1 <- get_legend(K_B1_leg + theme(legend.position = "bottom"))
+      # legend_B2 <- get_legend(K_B2_leg + theme(legend.position = "bottom"))
+      # 
+      # # Remove legends from individual plots
+      # legend_B1 <- legend_B1 + theme(legend.position = "none")
+      # legend_B2 <- legend_B2 + theme(legend.position = "none")
+      # 
+      # # Arrange plots with shared legend
+      # plot_grid(
+      #   ggarrange(K_A, K_C,
+      #             K_B1+theme(legend.position = "none"), K_B2+theme(legend.position = "none"), 
+      #             ncol = 2, nrow=2),
+      #   ggarrange(legend_B1,legend_B2, ncol=2),
+      #   nrow = 2,
+      #   rel_heights = c(.95, .05) # Adjust legend height
+      # )
+      # self$multiwave_plots <- list(K_A=K_A, K_B1=K_B1, K_B2=K_B2, K_C=K_C)
+      self$multiwave_plots <- list(combined_plot=combined_plot)
+      #
+      if(return_plot)
+        return(combined_plot)
+    },
+    
+    ##
+    search_rsiena_multiwave_plot_K_C_strategy_summary = function(component_ids=c(), 
+                                                                  wave_ids=c(),
+                                                                  thin_factor=1, 
+                                                                  thin_wave_factor=1,
+                                                                  smooth_method='loess',  ##"lm", "glm", "gam", "loess","auto"
+                                                                  show_utility_points=T,
+                                                                  show_legend=TRUE,
+                                                                  show_title=TRUE,
+                                                                  return_plot=FALSE
+                                                                 ) {
+      ## actor strategy
+      if ( attr(self$strat_1_coCovar, 'nodeSet') != 'ACTORS' )
+        stop("Actor Strategy self$strat_1_coCovar not are set.")
+      if ( attr(self$component_1_coCovar, 'nodeSet') != 'COMPONENTS' )
+        stop("Component payoff values in self$component_1_coCovar are not set.")
+      # actor_strat <- as.factor( self$strat_coCovar )
+      # component_types <- as.factor( self$component_coCovar )
+      # component_types <- as.factor( sample(0:1, self$N, replace = T) )
+      component_types <- as.factor( ifelse(self$component_1_coCovar > 0.5, 'High', 'Low') )
+      #
+      nstep <- sum(!self$chain_stats$stability)
+      #
+      strateffs   <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)x$effect)
+      stratparams <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)x$parameter)
+      stratfixs   <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)ifelse(x$fix,'(Fix)',''))
+      # stratfixs   <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)substr(as.character(x$fix),1,1))
+      #
+      structeffs   <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)x$effect)
+      structparams <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)x$parameter)
+      structfixs   <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)ifelse(x$fix,'(Fix)',''))
+      # structfixs   <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)substr(as.character(x$fix),1,1))
+      ## Compare 2 actors utilty
+      dat <- self$K_wave_C %>% 
+        filter(chain_step_id %% thin_factor == 0) %>% 
+        filter(wave_id %% thin_wave_factor == 0 ) %>% 
+        mutate(
+          # strategy = actor_strat[ actor_id ],
+          component_type = component_types[ component_id ],
+          chain_below_med =  chain_step_id < median(chain_step_id)
+        )
+      dat$chain_half <- factor(ifelse(dat$chain_below_med, '1st Half', '2nd Half'))
+      #
+      y_lab <- 'K_C: Component Epistasis Degree'
+      # if(scale_utility) {
+      #   util_sc <- scale(dat$value)
+      #   y_lab <- sprintf('K_A: Social Degree\n(Standardized Center = %.2f; Scale = %.2f)',
+      #                       attr(util_sc, 'scaled:center'), 
+      #                       attr(util_sc, 'scaled:scale'))
+      #   dat <- dat %>% mutate(value = c(scale(value)))
+      # }
+      #
+      density_rng <- range(dat$value, na.rm=T)
+      density_absdiff_scale <- abs(diff(density_rng)) * 0.1
+      y_lim <- c(density_rng[1] - density_absdiff_scale,  density_rng[2] + density_absdiff_scale)
+      #
+      point_size <- 10 / log( nstep )
+      point_alpha <- min( 1,  1/log10( nstep ) )
+      #
+      if(length(component_ids))
+        dat <- dat %>% filter(component_id %in% component_ids)
+      if(length(wave_ids))
+        dat <- dat %>% filter(wave_id %in% wave_ids)
+      dat_wave_means <- dat %>% group_by(wave_id) %>% 
+        summarize(mean=mean(value, na.rm=T))
+      plt <- ggplot(dat, aes(x=chain_step_id, y=value)) + 
+        geom_hline(data=dat_wave_means, aes(yintercept=mean), linetype=3, col='black' ) +
+        facet_grid(wave_id ~ .) 
+      if(show_utility_points)
+        plt <- plt + geom_point(aes(color=component_type), alpha=point_alpha, shape=1, size=point_size)  # geom_line(alpha=.2) +#geom_smooth(method='loess', alpha=.1) + 
+      if(exists(smooth_method))
+        plt <- plt + geom_smooth(aes(linetype=component_type, color=component_type, fill=component_type), method = smooth_method, linewidth=1, alpha=.09)
+      #
+      plt <- plt + theme_bw() + 
+        # scale_linetype_manual(values = rep(1:8, length.out = length(unique(dat$component_id)))) +
+        ylim(y_lim) + 
+        ylab(y_lab) +
+        xlab('Actor Decision Chain Ministep') +
+        theme(
+          panel.grid.minor = element_blank(),
+          legend.position = "bottom"#,
+          # legend.box = "horizontal",
+          # legend.box.just = "center",
+          # legend.key.width = unit(0.8, "cm"),  # Adjust legend key width
+          # legend.spacing.x = unit(0.3, "cm")   # Adjust spacing between keys
+        )
+      if (show_title)
+        plt <- plt + ggtitle(sprintf('Strategy:  %s\nStructure:  %s', 
+                                     paste( paste(paste(strateffs, stratparams, sep='= '), stratfixs, sep='' ), collapse = ';  '),
+                                     paste( paste(paste(structeffs, structparams, sep='= '), structfixs, sep=''), collapse = ';  ')
+        ))
+      #
+      plt <- plt +  guides(color = guide_legend(nrow = 1))
+      
+      #### Density
+      stratmeans <- dat %>% group_by(component_type, wave_id) %>% 
+        summarize(n=n(), mean=mean(value, na.rm=T), sd=sd(value, na.rm=T))
+      ## Actor density fact plots comparing H1 to H2 utility distribution
+      plt2 <- ggplot(dat, aes(x=value, color=component_type, fill=component_type)) + ##linetype=chain_half
+        geom_density(alpha=.1, linewidth=1)  +
+        # geom_histogram(alpha=.1, position = 'dodge') +
+        geom_vline(data = stratmeans, aes(xintercept = mean, color=component_type), linetype=2, linewidth=.9) +
+        geom_vline(data = dat_wave_means,  aes(xintercept=mean), linetype=3, col='black' ) +
+        labs(y='', x='') +
+        # xlim(c(ggplot_build(plt)$layout$panel_params[[1]]$y.range)) + 
+        xlim(y_lim) +
+        coord_flip() +
+        facet_grid(wave_id ~ .) +
+        ylab('K_C Density') +
+        # labs(color='component_type', fill='component_type') +
+        # geom_vline(xintercept = 0, linetype=2, linewidth=.9, color='gray')+
+        theme_bw() + theme(
+          strip.background = element_blank(),
+          strip.text = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.grid.major.x = element_blank(),
+          legend.position = 'none', 
+          plot.margin=unit(c(5.5, 5.5, 5.5, -23), 'pt'),
+          axis.text.y = element_blank(),
+          axis.ticks.y=element_blank()#,
+          # axis.text.x = element_blank(),
+          # axis.ticks.x=element_blank()#,
+        ) 
+      if (show_title)
+        plt2 <- plt2 + ggtitle('\n')
+      
+      # combined_plot <- plot_grid(plt ,#+ theme(panel.spacing = unit(0, "lines")), 
+      #                            plt2 ,# + theme(panel.spacing = unit(0, "lines")), 
+      #                            ncol = 2, rel_widths = c(4, 1)) 
+      # print(combined_plot)
+      
+      combined_plot <- ggarrange(
+        plt, plt2, 
+        ncol = 2, 
+        widths = c(4.1,0.9), # Adjust column widths
+        common.legend = TRUE, # Share a common legend if needed
+        legend = ifelse(show_legend, "bottom", "none")#,     # Place legend at the bottom
+        # align = 'h'
+      ) 
+      # print(combined_plot)
+      #
+      # print(plt)
+      #
+      if(return_plot)
+        return(combined_plot)
+    },
+    
+    ##
+    search_rsiena_multiwave_plot_K_B2_strategy_summary = function(component_ids=c(), 
+                                                                  wave_ids=c(),
+                                                                  thin_factor=1, 
+                                                                  thin_wave_factor=1,
+                                                                  smooth_method='loess',  ##"lm", "glm", "gam", "loess","auto"
+                                                                  show_utility_points=T,
+                                                                  show_legend=TRUE,
+                                                                  show_title=TRUE,
+                                                                  return_plot=FALSE
+    ) {
+      ## actor strategy
+      if ( attr(self$strat_1_coCovar, 'nodeSet') != 'ACTORS' )
+        stop("Actor Strategy self$strat_1_coCovar are not set.")
+      if ( attr(self$component_1_coCovar, 'nodeSet') != 'COMPONENTS' )
+        stop("Component payoff values in self$component_1_coCovar are not set.")
+      # actor_strat <- as.factor( self$strat_coCovar )
+      # component_types <- as.factor( self$component_type_coCovar )
+      # component_types <- as.factor( rep(1, self$N ) )
+      component_types <- as.factor( ifelse(self$component_1_coCovar > 0.5, 'High', 'Low') )
+      #
+      nstep <- sum(!self$chain_stats$stability)
+      #
+      strateffs   <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)x$effect)
+      stratparams <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)x$parameter)
+      stratfixs   <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)ifelse(x$fix,'(Fix)',''))
+      # stratfixs   <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)substr(as.character(x$fix),1,1))
+      #
+      structeffs   <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)x$effect)
+      structparams <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)x$parameter)
+      structfixs   <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)ifelse(x$fix,'(Fix)',''))
+      # structfixs   <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)substr(as.character(x$fix),1,1))
+      ## Compare 2 actors utilty
+      dat <- self$K_wave_B2 %>% 
+        filter(chain_step_id %% thin_factor == 0) %>% 
+        filter(wave_id %% thin_wave_factor == 0 ) %>% 
+        mutate(
+          component_type = component_types[ component_id ],
+          chain_below_med =  chain_step_id < median(chain_step_id)
+        )
+      dat$chain_half <- factor(ifelse(dat$chain_below_med, '1st Half', '2nd Half'))
+      #
+      y_lab <- 'K_B2: Component-Actor Degree'
+      # if(scale_utility) {
+      #   util_sc <- scale(dat$value)
+      #   y_lab <- sprintf('K_A: Social Degree\n(Standardized Center = %.2f; Scale = %.2f)',
+      #                       attr(util_sc, 'scaled:center'), 
+      #                       attr(util_sc, 'scaled:scale'))
+      #   dat <- dat %>% mutate(value = c(scale(value)))
+      # }
+      #
+      density_rng <- range(dat$value, na.rm=T)
+      density_absdiff_scale <- abs(diff(density_rng)) * 0.1
+      y_lim <- c(density_rng[1] - density_absdiff_scale,  density_rng[2] + density_absdiff_scale)
+      #
+      point_size <- 10 / log( nstep )
+      point_alpha <- min( 1,  1/log10( nstep ) )
+      #
+      if(length(component_ids))
+        dat <- dat %>% filter(component_id %in% component_ids)
+      if(length(wave_ids))
+        dat <- dat %>% filter(wave_id %in% wave_ids)
+      dat_wave_means <- dat %>% group_by(wave_id) %>% 
+        summarize(mean=mean(value, na.rm=T))
+      plt <- ggplot(dat, aes(x=chain_step_id, y=value)) + 
+        geom_hline(data=dat_wave_means, aes(yintercept=mean), linetype=3, col='black' ) +
+        facet_grid(wave_id ~ .) 
+      if(show_utility_points)
+        plt <- plt + geom_point(aes(color=component_type), alpha=point_alpha, shape=1, size=point_size)  # geom_line(alpha=.2) +#geom_smooth(method='loess', alpha=.1) + 
+      if(exists(smooth_method))
+        plt <- plt + geom_smooth(aes(linetype=component_type, color=component_type, fill=component_type), method = smooth_method, linewidth=1, alpha=.09)
+      #
+      plt <- plt + theme_bw() + 
+        # scale_linetype_manual(values = rep(1:8, length.out = length(unique(dat$component_id)))) +
+        ylim(y_lim) + 
+        ylab(y_lab) +
+        xlab('Actor Decision Chain Ministep') +
+        theme(
+          panel.grid.minor = element_blank(),
+          legend.position = "bottom",
+          legend.box = "horizontal",
+          legend.box.just = "center",
+          legend.key.width = unit(0.8, "cm"),  # Adjust legend key width
+          legend.spacing.x = unit(0.3, "cm")   # Adjust spacing between keys
+        )
+      if(show_title)
+        plt <- plt + ggtitle(sprintf('Strategy:  %s\nStructure:  %s', 
+                                     paste( paste(paste(strateffs, stratparams, sep='= '), stratfixs, sep='' ), collapse = ';  '),
+                                     paste( paste(paste(structeffs, structparams, sep='= '), structfixs, sep=''), collapse = ';  ')
+        ))
+      #
+      plt <- plt +  guides(color = guide_legend(nrow = 1))
+      
+      #### Density
+      stratmeans <- dat %>% group_by(component_type, wave_id) %>% 
+        summarize(n=n(), mean=mean(value, na.rm=T), sd=sd(value, na.rm=T))
+      ## Actor density fact plots comparing H1 to H2 utility distribution
+      plt2 <- ggplot(dat, aes(x=value, color=component_type, fill=component_type)) + ##linetype=chain_half
+        geom_density(alpha=.1, linewidth=1)  +
+        # geom_histogram(alpha=.1, position = 'dodge') +
+        geom_vline(data = stratmeans, aes(xintercept = mean, color=component_type), linetype=2, linewidth=.9) +
+        geom_vline(data = dat_wave_means,  aes(xintercept=mean), linetype=3, col='black' ) +
+        labs(y='', x='') +
+        # xlim(c(ggplot_build(plt)$layout$panel_params[[1]]$y.range)) + 
+        xlim(y_lim) +
+        coord_flip() +
+        facet_grid(wave_id ~ .) +
+        ylab('K_B2 Density') +
+        # geom_vline(xintercept = 0, linetype=2, linewidth=.9, color='gray')+
+        theme_bw() + theme(
+          strip.background = element_blank(),
+          strip.text = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.grid.major.x = element_blank(),
+          legend.position = 'none', 
+          plot.margin=unit(c(5.5, 5.5, 5.5, -23), 'pt'),
+          axis.text.y = element_blank(),
+          axis.ticks.y=element_blank()#,
+          # axis.text.x = element_blank(),
+          # axis.ticks.x=element_blank()#,
+        ) 
+      if (show_title)
+        plt2 <- plt2 + ggtitle('\n')
+      
+      # combined_plot <- plot_grid(plt ,#+ theme(panel.spacing = unit(0, "lines")), 
+      #                            plt2 ,# + theme(panel.spacing = unit(0, "lines")), 
+      #                            ncol = 2, rel_widths = c(4, 1)) 
+      # print(combined_plot)
+      
+      combined_plot <- ggarrange(
+        plt, plt2, 
+        ncol = 2, 
+        widths = c(4.1,0.9), # Adjust column widths
+        common.legend = TRUE, # Share a common legend if needed
+        legend = ifelse(show_legend, "bottom", "none")#,     # Place legend at the bottom
+        # align = 'h'
+      ) 
+      # print(combined_plot)
+      #
+      # print(plt)
+      #
+      if(return_plot)
+        return(combined_plot)
+    },
+    
+    
+    ##
+    search_rsiena_multiwave_plot_K_B1_strategy_summary = function(actor_ids=c(), 
+                                                                 wave_ids=c(),
+                                                                 thin_factor=1, 
+                                                                 thin_wave_factor=1,
+                                                                 smooth_method='loess',  ##"lm", "glm", "gam", "loess","auto"
+                                                                 show_utility_points=T,
+                                                                 show_legend=TRUE,
+                                                                 show_title=TRUE,
+                                                                 return_plot=FALSE
+    ) {
+      ## actor strategy
+      if ( attr(self$strat_1_coCovar, 'nodeSet') != 'ACTORS' )
+        stop("Actor Strategy self$strat_1_coCovar not set.")
+      actor_strat <- as.factor( self$strat_1_coCovar )
+      #
+      nstep <- sum(!self$chain_stats$stability)
+      #
+      strateffs   <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)x$effect)
+      stratparams <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)x$parameter)
+      stratfixs   <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)ifelse(x$fix,'(Fix)',''))
+      # stratfixs   <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)substr(as.character(x$fix),1,1))
+      #
+      structeffs   <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)x$effect)
+      structparams <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)x$parameter)
+      structfixs   <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)ifelse(x$fix,'(Fix)',''))
+      # structfixs   <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)substr(as.character(x$fix),1,1))
+      ## Compare 2 actors utilty
+      dat <- self$K_wave_B1 %>% 
+        filter(chain_step_id %% thin_factor == 0) %>% 
+        filter(wave_id %% thin_wave_factor == 0 ) %>% 
+        mutate(
+          strategy = actor_strat[ actor_id ],
+          chain_below_med =  chain_step_id < median(chain_step_id)
+        )
+      dat$chain_half <- factor(ifelse(dat$chain_below_med, '1st Half', '2nd Half'))
+      #
+      y_lab <- 'K_B1: Actor-Component Degree'
+      # if(scale_utility) {
+      #   util_sc <- scale(dat$value)
+      #   y_lab <- sprintf('K_A: Social Degree\n(Standardized Center = %.2f; Scale = %.2f)',
+      #                       attr(util_sc, 'scaled:center'), 
+      #                       attr(util_sc, 'scaled:scale'))
+      #   dat <- dat %>% mutate(value = c(scale(value)))
+      # }
+      #
+      density_rng <- range(dat$value, na.rm=T)
+      density_absdiff_scale <- abs(diff(density_rng)) * 0.1
+      y_lim <- c(density_rng[1] - density_absdiff_scale,  density_rng[2] + density_absdiff_scale)
+      #
+      point_size <- 10 / log( nstep )
+      point_alpha <- min( 1,  1/log10( nstep ) )
+      #
+      if(length(actor_ids))
+        dat <- dat %>% filter(actor_id %in% actor_ids)
+      if(length(wave_ids))
+        dat <- dat %>% filter(wave_id %in% wave_ids)
+      dat_wave_means <- dat %>% group_by(wave_id) %>% 
+        summarize(mean=mean(value, na.rm=T))
+      plt <- ggplot(dat, aes(x=chain_step_id, y=value)) + 
+        geom_hline(data=dat_wave_means, aes(yintercept=mean), linetype=3, col='black' ) +
+        facet_grid(wave_id ~ .) 
+      if(show_utility_points)
+        plt <- plt + geom_point(aes(color=strategy), alpha=point_alpha, shape=1, size=point_size)  # geom_line(alpha=.2) +#geom_smooth(method='loess', alpha=.1) + 
+      if(exists(smooth_method))
+        plt <- plt + geom_smooth(aes(linetype=actor_id, color=strategy, fill=strategy), method = smooth_method, linewidth=1, alpha=.09)
+      #
+      plt <- plt + theme_bw() + 
+        ylim(y_lim) + 
+        ylab(y_lab) +
+        xlab('Actor Decision Chain Ministep') +
+        theme(
+          panel.grid.minor = element_blank(),
+          legend.position = "bottom",
+          legend.box = "horizontal",
+          legend.box.just = "center",
+          legend.key.width = unit(0.8, "cm"),  # Adjust legend key width
+          legend.spacing.x = unit(0.3, "cm")   # Adjust spacing between keys
+        )
+      if(show_title)
+        plt <- plt + ggtitle(sprintf('Strategy:  %s\nStructure:  %s', 
+                                     paste( paste(paste(strateffs, stratparams, sep='= '), stratfixs, sep='' ), collapse = ';  '),
+                                     paste( paste(paste(structeffs, structparams, sep='= '), structfixs, sep=''), collapse = ';  ')
+        ))
+      #
+      plt <- plt +  guides(color = guide_legend(nrow = 1))
+      
+      #### Density
+      stratmeans <- dat %>% group_by(strategy, wave_id) %>% 
+        summarize(n=n(), mean=mean(value, na.rm=T), sd=sd(value, na.rm=T))
+      ## Actor density fact plots comparing H1 to H2 utility distribution
+      plt2 <- ggplot(dat, aes(x=value, color=strategy, fill=strategy)) + ##linetype=chain_half
+        geom_density(alpha=.1, linewidth=1)  +
+        # geom_histogram(alpha=.1, position = 'dodge') +
+        geom_vline(data = stratmeans, aes(xintercept = mean, color=strategy), linetype=2, linewidth=.9) +
+        geom_vline(data = dat_wave_means,  aes(xintercept=mean), linetype=3, col='black' ) +
+        labs(y='', x='') +
+        # xlim(c(ggplot_build(plt)$layout$panel_params[[1]]$y.range)) + 
+        xlim(y_lim) +
+        coord_flip() +
+        facet_grid(wave_id ~ .) +
+        ylab('K_B1 Density') +
+        # geom_vline(xintercept = 0, linetype=2, linewidth=.9, color='gray')+
+        theme_bw() + theme(
+          strip.background = element_blank(),
+          strip.text = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.grid.major.x = element_blank(),
+          legend.position = 'none', 
+          plot.margin=unit(c(5.5, 5.5, 5.5, -23), 'pt'),
+          axis.text.y = element_blank(),
+          axis.ticks.y=element_blank()#,
+          # axis.text.x = element_blank(),
+          # axis.ticks.x=element_blank()#,
+        ) 
+      if (show_title)
+        plt2 <- plt2 + ggtitle('\n')
+      
+      # combined_plot <- plot_grid(plt ,#+ theme(panel.spacing = unit(0, "lines")), 
+      #                            plt2 ,# + theme(panel.spacing = unit(0, "lines")), 
+      #                            ncol = 2, rel_widths = c(4, 1)) 
+      # print(combined_plot)
+      
+      combined_plot <- ggarrange(
+        plt, plt2, 
+        ncol = 2, 
+        widths = c(4.1,0.9), # Adjust column widths
+        common.legend = TRUE, # Share a common legend if needed
+        legend = ifelse(show_legend, "bottom", "none")#,     # Place legend at the bottom
+        # align = 'h'
+      ) 
+      # print(combined_plot)
+      #
+      # print(plt)
+      #
+      if(return_plot)
+        return(combined_plot)
+    },
+    
+    
+    ##
+    search_rsiena_multiwave_plot_K_A_strategy_summary = function(actor_ids=c(), 
+                                                                 wave_ids=c(),
+                                                                 thin_factor=1, 
+                                                                 thin_wave_factor=1,
+                                                                 smooth_method='loess',  ##"lm", "glm", "gam", "loess","auto"
+                                                                 show_utility_points=T,
+                                                                 show_legend=TRUE,
+                                                                 show_title=TRUE,
+                                                                 return_plot=FALSE
+    ) {
+      ## actor strategy
+      if ( attr(self$strat_1_coCovar, 'nodeSet') != 'ACTORS' )
+        stop("Actor Strategy self$strat_1_coCovar not set.")
+      actor_strat <- as.factor( self$strat_1_coCovar )
+      #
+      nstep <- sum(!self$chain_stats$stability)
+      #
+      strateffs   <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)x$effect)
+      stratparams <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)x$parameter)
+      stratfixs   <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)ifelse(x$fix,'(Fix)',''))
+      # stratfixs   <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)substr(as.character(x$fix),1,1))
+      #
+      structeffs   <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)x$effect)
+      structparams <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)x$parameter)
+      structfixs   <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)ifelse(x$fix,'(Fix)',''))
+      # structfixs   <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)substr(as.character(x$fix),1,1))
+      ## Compare 2 actors utilty
+      dat <- self$K_wave_A %>% 
+        filter(chain_step_id %% thin_factor == 0) %>% 
+        filter(wave_id %% thin_wave_factor == 0 ) %>% 
+        mutate(
+          strategy = actor_strat[ actor_id ],
+          chain_below_med =  chain_step_id < median(chain_step_id)
+        )
+      dat$chain_half <- factor(ifelse(dat$chain_below_med, '1st Half', '2nd Half'))
+      #
+      y_lab <- 'K_A: Social Degree'
+      density_rng <- range(dat$value, na.rm=T)
+      density_absdiff_scale <- abs(diff(density_rng)) * 0.1
+      y_lim <- c(density_rng[1] - density_absdiff_scale,  density_rng[2] + density_absdiff_scale)
+      #
+      point_size <- 10 / log( nstep )
+      point_alpha <- min( 1,  1/log10( nstep ) )
+      #
+      if(length(actor_ids))
+        dat <- dat %>% filter(actor_id %in% actor_ids)
+      if(length(wave_ids))
+        dat <- dat %>% filter(wave_id %in% wave_ids)
+      dat_wave_means <- dat %>% group_by(wave_id) %>% 
+        summarize(mean=mean(value, na.rm=T))
+      plt <- ggplot(dat, aes(x=chain_step_id, y=value)) + 
+        geom_hline(data=dat_wave_means, aes(yintercept=mean), linetype=3, col='black' ) +
+        facet_grid(wave_id ~ .) 
+      if(show_utility_points)
+        plt <- plt + geom_point(aes(color=strategy), alpha=point_alpha, shape=1, size=point_size)  # geom_line(alpha=.2) +#geom_smooth(method='loess', alpha=.1) + 
+      if(exists(smooth_method))
+        plt <- plt + geom_smooth(aes(linetype=actor_id, color=strategy, fill=strategy), method = smooth_method, linewidth=1, alpha=.09)
+      #
+      plt <- plt + theme_bw() + 
+        ylim(y_lim) + 
+        ylab(y_lab) +
+        xlab('Actor Decision Chain Ministep') +
+        theme(
+          panel.grid.minor = element_blank(),
+          legend.position = "bottom",
+          legend.box = "horizontal",
+          legend.box.just = "center",
+          legend.key.width = unit(0.8, "cm"),  # Adjust legend key width
+          legend.spacing.x = unit(0.3, "cm")   # Adjust spacing between keys
+        )
+      if(show_title)
+        plt <- plt + ggtitle(sprintf('Strategy:  %s\nStructure:  %s', 
+                                     paste( paste(paste(strateffs, stratparams, sep='= '), stratfixs, sep='' ), collapse = ';  '),
+                                     paste( paste(paste(structeffs, structparams, sep='= '), structfixs, sep=''), collapse = ';  ')
+        ))
+      #
+      plt <- plt +  guides(color = guide_legend(nrow = 1))
+      
+      #### Density
+      stratmeans <- dat %>% group_by(strategy, wave_id) %>% 
+        summarize(n=n(), mean=mean(value, na.rm=T), sd=sd(value, na.rm=T))
+      ## Actor density fact plots comparing H1 to H2 utility distribution
+      plt2 <- ggplot(dat, aes(x=value, color=strategy, fill=strategy)) + ##linetype=chain_half
+        geom_density(alpha=.1, linewidth=1)  +
+        # geom_histogram(alpha=.1, position = 'dodge') +
+        geom_vline(data = stratmeans, aes(xintercept = mean, color=strategy), linetype=2, linewidth=.9) +
+        geom_vline(data = dat_wave_means,  aes(xintercept=mean), linetype=3, col='black' ) +
+        labs(y='', x='') +
+        # xlim(c(ggplot_build(plt)$layout$panel_params[[1]]$y.range)) + 
+        xlim(y_lim) +
+        coord_flip() +
+        facet_grid(wave_id ~ .) +
+        ylab('K_A Density') +
+        # geom_vline(xintercept = 0, linetype=2, linewidth=.9, color='gray')+
+        theme_bw() + theme(
+          strip.background = element_blank(),
+          strip.text = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.grid.major.x = element_blank(),
+          legend.position = 'none', 
+          plot.margin=unit(c(5.5, 5.5, 5.5, -23), 'pt'),
+          axis.text.y = element_blank(),
+          axis.ticks.y=element_blank()#,
+          # axis.text.x = element_blank(),
+          # axis.ticks.x=element_blank()#,
+        )  
+      if (show_title)
+        plt2 <- plt2 + ggtitle('\n')
+      
+      # combined_plot <- plot_grid(plt ,#+ theme(panel.spacing = unit(0, "lines")), 
+      #                            plt2 ,# + theme(panel.spacing = unit(0, "lines")), 
+      #                            ncol = 2, rel_widths = c(4, 1)) 
+      # print(combined_plot)
+      
+      combined_plot <- ggarrange(
+        plt, plt2, 
+        ncol = 2, 
+        widths = c(4.1,0.9), # Adjust column widths
+        common.legend = TRUE, # Share a common legend if needed
+        legend = ifelse(show_legend, "bottom", "none")#,     # Place legend at the bottom
+        # align = 'h'
+      ) 
+      # print(combined_plot)
+      #
+      # print(plt)
+      #
+      if(return_plot)
+        return(combined_plot)
+    },
+    
+    
+    ##
+    search_rsiena_multiwave_plot_actor_utility_strategy_summary = function(actor_ids=c(), 
+                                                                           wave_ids=c(),
+                                                                            thin_factor=1, 
+                                                                            thin_wave_factor=1,
+                                                                            smooth_method='loess',  ##"lm", "glm", "gam", "loess","auto"
+                                                                            show_utility_points=T,
+                                                                           scale_utility=TRUE,
+                                                                            return_plot=FALSE
+    ) {
+      ## actor strategy
+      if ( attr(self$strat_1_coCovar, 'nodeSet') != 'ACTORS' )
+        stop("Actor Strategy self$strat_1_coCovar not set.")
+      actor_strat <- as.factor( self$strat_1_coCovar )
+      #
+      nstep <- sum(!self$chain_stats$stability)
+      #
+      strateffs   <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)x$effect)
+      stratparams <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)x$parameter)
+      stratfixs   <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)ifelse(x$fix,'(Fix)',''))
+      # stratfixs   <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)substr(as.character(x$fix),1,1))
+      #
+      structeffs   <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)x$effect)
+      structparams <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)x$parameter)
+      structfixs   <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)ifelse(x$fix,'(Fix)',''))
+      # structfixs   <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)substr(as.character(x$fix),1,1))
+      ## Compare 2 actors utilty
+      dat <- self$actor_wave_util %>% 
+        filter(chain_step_id %% thin_factor == 0) %>% 
+        filter(wave_id %% thin_wave_factor == 0 ) %>% 
+        mutate(
+          strategy = actor_strat[ actor_id ],
+          chain_below_med =  chain_step_id < median(chain_step_id)
+        )
+      dat$chain_half <- factor(ifelse(dat$chain_below_med, '1st Half', '2nd Half'))
+      #
+      util_lab <- 'Actor Utility'
+      if(scale_utility) {
+        util_sc <- scale(dat$utility)
+        util_lab <- sprintf('Actor Utility\n(Standardized Center = %.2f; Scale = %.2f)',
+                            attr(util_sc, 'scaled:center'), 
+                            attr(util_sc, 'scaled:scale'))
+        dat <- dat %>% mutate(utility = c(scale(utility)))
+      }
+      #
+      density_rng <- range(dat$utility, na.rm=T)
+      density_absdiff_scale <- abs(diff(density_rng)) * 0.1
+      util_lim <- c(density_rng[1] - density_absdiff_scale,  density_rng[2] + density_absdiff_scale)
+      #
+      point_size <- 10 / log( nstep )
+      point_alpha <- min( 1,  1/log10( nstep ) )
+      #
+      if(length(actor_ids))
+        dat <- dat %>% filter(actor_id %in% actor_ids)
+      if(length(wave_ids))
+        dat <- dat %>% filter(wave_id %in% wave_ids)
+      dat_wave_means <- dat %>% group_by(wave_id) %>% 
+        summarize(mean=mean(utility, na.rm=T))
+      plt <- ggplot(dat, aes(x=chain_step_id, y=utility)) + 
+        geom_hline(data=dat_wave_means, aes(yintercept=mean), linetype=3, col='black' ) +
+        facet_grid(wave_id ~ .) 
+      if(show_utility_points)
+        plt <- plt + geom_point(aes(color=strategy), alpha=point_alpha, shape=1, size=point_size)  # geom_line(alpha=.2) +#geom_smooth(method='loess', alpha=.1) + 
+      if(exists(smooth_method))
+        plt <- plt + geom_smooth(aes(linetype=actor_id, color=strategy, fill=strategy), method = smooth_method, linewidth=1, alpha=.09)
+      #
+      plt <- plt + theme_bw() + 
+        ylim(util_lim) + 
+        ylab(util_lab) +
+        xlab('Actor Decision Chain Ministep') +
+        theme(
+          panel.grid.minor = element_blank(),
+          legend.position = "bottom",
+          legend.box = "horizontal",
+          legend.box.just = "center",
+          legend.key.width = unit(0.8, "cm"),  # Adjust legend key width
+          legend.spacing.x = unit(0.3, "cm")   # Adjust spacing between keys
+        )
+      plt <- plt + ggtitle(sprintf('Strategy:  %s\nStructure:  %s', 
+                      paste( paste(paste(strateffs, stratparams, sep='= '), stratfixs, sep='' ), collapse = ';  '),
+                      paste( paste(paste(structeffs, structparams, sep='= '), structfixs, sep=''), collapse = ';  ')
+      ))
+      plt <- plt +  guides(color = guide_legend(nrow = 1))
+     
+      #### Density
+      stratmeans <- dat %>% group_by(strategy, wave_id) %>% 
+        summarize(n=n(), mean=mean(utility, na.rm=T), sd=sd(utility, na.rm=T))
+      ## Actor density fact plots comparing H1 to H2 utility distribution
+      plt2 <- ggplot(dat, aes(x=utility, color=strategy, fill=strategy)) + ##linetype=chain_half
+        geom_density(alpha=.1, linewidth=1)  +
+        # geom_histogram(alpha=.1, position = 'dodge') +
+        geom_vline(data = stratmeans, aes(xintercept = mean, color=strategy), linetype=2, linewidth=.9) +
+        geom_vline(data = dat_wave_means,  aes(xintercept=mean), linetype=3, col='black' ) +
+        labs(y='', x='') +
+        # xlim(c(ggplot_build(plt)$layout$panel_params[[1]]$y.range)) + 
+        xlim(util_lim) +
+        coord_flip() +
+        facet_grid(wave_id ~ .) +
+        ylab('Actor Utility Density') +
+        # geom_vline(xintercept = 0, linetype=2, linewidth=.9, color='gray')+
+        theme_bw() + theme(
+          strip.background = element_blank(),
+          strip.text = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.grid.major.x = element_blank(),
+          legend.position = 'none', 
+          plot.margin=unit(c(5.5, 5.5, 5.5, -23), 'pt'),
+          axis.text.y = element_blank(),
+          axis.ticks.y=element_blank()#,
+          # axis.text.x = element_blank(),
+          # axis.ticks.x=element_blank()#,
+          ) + ggtitle('\n')
+      
+      # combined_plot <- plot_grid(plt ,#+ theme(panel.spacing = unit(0, "lines")), 
+      #                            plt2 ,# + theme(panel.spacing = unit(0, "lines")), 
+      #                            ncol = 2, rel_widths = c(4, 1)) 
+      # print(combined_plot)
+      
+      combined_plot <- ggarrange(
+        plt, plt2, 
+        ncol = 2, 
+        widths = c(4.1,0.9), # Adjust column widths
+        common.legend = TRUE, # Share a common legend if needed
+        legend = "bottom"#,     # Place legend at the bottom
+        # align = 'h'
+      ) 
+      # print(combined_plot)
+      #
+      # print(plt)
+      #
+      if(return_plot)
+        return(combined_plot)
+    },
+    
+    ##
+    search_rsiena_multiwave_plot_actor_utility_by_strategy = function(actor_ids=c(), 
+                                                                      thin_factor=1, 
+                                                                      thin_wave_factor=1,
+                                                                      smooth_method='loess',  ##"lm", "glm", "gam", "loess","auto"
+                                                                      show_utility_points=TRUE,
+                                                                      return_plot=FALSE
+    ) {
+      ## actor strategy
+      if ( attr(self$strat_1_coCovar, 'nodeSet') != 'ACTORS' )
+        stop("Actor Strategy self$strat_1_coCovar not set.")
+      actor_strat <- as.factor( self$strat_1_coCovar )
+      ## Compare 2 actors utilty
+      dat <- self$actor_wave_util %>% 
+        filter(chain_step_id %% thin_factor == 0) %>% 
+        filter(wave_id %% thin_wave_factor == 0 ) %>% 
+        mutate(strategy = actor_strat[ actor_id ] )
+      if(length(actor_ids))
+        dat <- dat %>% filter(actor_id %in% actor_ids)
+      plt <- ggplot(dat, aes(x=chain_step_id, y=utility)) + 
+        geom_hline(data=dat%>%group_by(wave_id)%>%summarize(mean=mean(utility, na.rm=T)), aes(yintercept=mean), linetype=2, col='black' ) +
+        facet_wrap( ~ wave_id)
+      if(show_utility_points)
+        plt <- plt + geom_point(aes(color=strategy), alpha=.25, shape=1, size=2)  # geom_line(alpha=.2) +#geom_smooth(method='loess', alpha=.1) + 
+      if(exists(smooth_method))
+        plt <- plt + geom_smooth(aes(linetype=actor_id, color=strategy), method = smooth_method, linewidth=1, alpha=.15)
+      #
+      plt <- plt + theme_bw()
+      #
+      # Add marginal density plots
+      plt <- ggMarginal(plt, type = "density", margins = "y")
+      
+      #
+      print(plt)
+      #
+      if(return_plot)
+        return(plt)
+    },
+    
+    
+    ##
+    search_rsiena_multiwave_plot_actor_utility_density_by_strategy = function(thin_wave_factor=1, return_plot=FALSE) {
+      ## actor strategy
+      if ( attr(self$strat_1_coCovar, 'nodeSet') != 'ACTORS' )
+        stop("Actor Strategy self$strat_1_coCovar not set.")
+      actor_strat <- as.factor( self$strat_1_coCovar )
+      #
+      strateffs   <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)x$effect)
+      stratparams <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)x$parameter)
+      stratfixs   <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)ifelse(x$fix,'(Fix)',''))
+      # stratfixs   <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)substr(as.character(x$fix),1,1))
+      #
+      structeffs   <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)x$effect)
+      structparams <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)x$parameter)
+      structfixs   <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)ifelse(x$fix,'(Fix)',''))
+      # structfixs   <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)substr(as.character(x$fix),1,1))
+      ## Compare 2 actors utilty
+      dat <- self$actor_wave_util %>% 
+        filter(wave_id %% thin_wave_factor == 0 ) %>% 
+        mutate(
+          strategy = actor_strat[ actor_id ] ,
+          chain_below_med =  chain_step_id < median(chain_step_id)
+        )
+      dat$chain_half <- factor(ifelse(dat$chain_below_med, '1st Half', '2nd Half'))
+      ##filter(chain_step_id %% thin_factor == 0) %>% 
+      # dat$chain_half <- factor(1 + 1*(dat$chain_step_id >= median(dat$chain_step_id)), levels = c(2,1)) ## reverse order for linetype_1 used for Half_2
+      # dat <- self$actor_util_df ##%>% filter(chain_step_id %% thin_factor == 0)
+      ##
+      stratmeans <- dat %>% group_by(strategy, chain_half, wave_id) %>% 
+        summarize(n=n(), mean=mean(utility, na.rm=T), sd=sd(utility, na.rm=T))
+      ## Actor density fact plots comparing H1 to H2 utility distribution
+      plt <- ggplot(dat, aes(x=utility, color=strategy, fill=strategy)) + ##linetype=chain_half
+        geom_density(alpha=.1, linewidth=1)  +
+        # geom_histogram(alpha=.1, position = 'dodge') +
+        facet_grid( wave_id ~ chain_half) +
+        geom_vline(data = stratmeans, aes(xintercept = mean, color=strategy), linetype=2, linewidth=.9) +
+        # geom_vline(xintercept = 0, linetype=2, linewidth=.9, color='gray')+
+        theme_bw() + 
+        ggtitle(sprintf('Strategy: %s\nStructure: %s', 
+                        paste( paste(paste(strateffs, stratparams, sep='='), stratfixs, sep='' ), collapse = '; '),
+                        paste( paste(paste(structeffs, structparams, sep='='), structfixs, sep=''), collapse = '; ')
+                        ))
+      print(plt)
+      if(return_plot)
+        return(plt)
+    },
+    
+   
     
     # Convenience function for plotting all relevant plots 
     # or one plot by specifying plot 
@@ -1366,26 +2980,38 @@ SaomNkRSienaBiEnv <- R6Class(
                                   smooth_method='loess',
                                   show_utility_points=TRUE,
                                   return_plot=FALSE,
+                                  append_plot=FALSE,
                                   histogram_position='identity'
                                   ) {
       # if (all(is.na(type)) |  'ministep_count' %in% type)
       #   return(self$search_rsiena_plot_actor_ministep_count(rolling_window))
       # if (all(is.na(type)) | type == 'utility')
       #   return(self$search_rsiena_plot_actor_utility(rolling_window))
+      plist <- list()
       if (all(is.na(type)) |  'utility' %in% type)
-        return(self$search_rsiena_plot_actor_utility(actor_ids, thin_factor, smooth_method, show_utility_points))
+        plist[['utility']] <- self$search_rsiena_plot_actor_utility(actor_ids, thin_factor, smooth_method, show_utility_points, return_plot=T)
+      
       if (all(is.na(type)) |  'utility_by_strategy' %in% type)
-        return(self$search_rsiena_plot_actor_utility_by_strategy(actor_ids, thin_factor, smooth_method, show_utility_points))
+        plist[['utility_by_strategy']] <- self$search_rsiena_plot_actor_utility_by_strategy(actor_ids, thin_factor, smooth_method, show_utility_points, return_plot=T)
+      
       if (all(is.na(type)) |  'utility_density' %in% type)
-        return(self$search_rsiena_plot_actor_utility_density(return_plot))
+        plist[['utility_density']] <- self$search_rsiena_plot_actor_utility_density(return_plot=T)
+      
       if (all(is.na(type)) |  'utility_density_by_strategy' %in% type)
-        return(self$search_rsiena_plot_actor_utility_density_by_strategy(return_plot))
+        plist[['utility_density_by_strategy']] <- self$search_rsiena_plot_actor_utility_density_by_strategy(return_plot=T)
+      
       if (all(is.na(type)) |  'utility_histogram_by_strategy' %in% type)
-        return(self$search_rsiena_plot_actor_utility_histogram_by_strategy(histogram_position, return_plot))
+        plist[['utility_histogram_by_strategy']] <- self$search_rsiena_plot_actor_utility_histogram_by_strategy(histogram_position, return_plot=T)
+      
       if (all(is.na(type)) |  'stability' %in% type)
-        return(self$search_rsiena_plot_stability())
-      #
-      stop(sprintf('Plot type not implemented: %s', type))
+        plist[['stability']] <- self$search_rsiena_plot_stability() ##**TODO** Fix return plot
+      
+      #  SET plots 
+      self$plots <- if(append_plot) { append(self$plots, plist) } else { plist }
+      
+      # stop(sprintf('Plot type not implemented: %s', type))
+      if(return_plot)
+        return(plist)
     },
     # ##**TODO** Action count data frames (explore, exploit) 
     # ##          rows (actors) by columns (iterations), counts: 0,1,2,3,...
@@ -1403,7 +3029,7 @@ SaomNkRSienaBiEnv <- R6Class(
                                                 return_plot=FALSE
                                                 ) {
       ## Compare 2 actors utilty
-      dat <- self$actor_stats$util_df %>% filter(chain_step_id %% thin_factor == 0)
+      dat <- self$actor_util_df %>% filter(chain_step_id %% thin_factor == 0)
       if(length(actor_ids))
         dat <- dat%>%filter(actor_id %in% actor_ids)
       plt <- ggplot(dat, aes(x=chain_step_id, y=utility, color=actor_id)) + 
@@ -1428,11 +3054,11 @@ SaomNkRSienaBiEnv <- R6Class(
                                                         return_plot=FALSE
                                                         ) {
       ## actor strategy
-      if ( attr(self$strat_coCovar, 'nodeSet') != 'ACTORS' )
-        stop("Actor Strategy self$strat_coCovar not set.")
-      actor_strat <- as.factor( self$strat_coCovar )
+      if ( attr(self$strat_1_coCovar, 'nodeSet') != 'ACTORS' )
+        stop("Actor Strategy self$strat_1_coCovar not set.")
+      actor_strat <- as.factor( self$strat_1_coCovar )
       ## Compare 2 actors utilty
-      dat <- self$actor_stats$util_df %>% 
+      dat <- self$actor_util_df %>% 
         filter(chain_step_id %% thin_factor == 0) %>% 
         mutate(strategy = actor_strat[ actor_id ] )
       if(length(actor_ids))
@@ -1455,7 +3081,7 @@ SaomNkRSienaBiEnv <- R6Class(
     ##
     search_rsiena_plot_actor_utility_density = function(return_plot=FALSE) {
       #
-      dat <- self$actor_stats$util_df ##%>% filter(chain_step_id %% thin_factor == 0)
+      dat <- self$actor_util_df ##%>% filter(chain_step_id %% thin_factor == 0)
       ## Actor density fact plots comparing H1 to H2 utility distribution
       dat$chain_half <- factor(1 + 1*(dat$chain_step_id >= median(dat$chain_step_id)), levels = c(2,1)) ## reverse order for linetype_1 used for Half_2
       plt <- ggplot(dat, aes(x=utility, color=actor_id, fill=actor_id, linetype=chain_half)) + 
@@ -1470,11 +3096,11 @@ SaomNkRSienaBiEnv <- R6Class(
     ##
     search_rsiena_plot_actor_utility_density_by_strategy = function(return_plot=FALSE) {
       ## actor strategy
-      if ( attr(self$strat_coCovar, 'nodeSet') != 'ACTORS' )
-        stop("Actor Strategy self$strat_coCovar not set.")
-      actor_strat <- as.factor( self$strat_coCovar )
+      if ( attr(self$strat_1_coCovar, 'nodeSet') != 'ACTORS' )
+        stop("Actor Strategy self$strat_1_coCovar not set.")
+      actor_strat <- as.factor( self$strat_1_coCovar )
       ## Compare 2 actors utilty
-      dat <- self$actor_stats$util_df %>%  
+      dat <- self$actor_util_df %>%  
         mutate(
           strategy = actor_strat[ actor_id ] ,
           chain_below_med =  chain_step_id < median(chain_step_id)
@@ -1482,7 +3108,7 @@ SaomNkRSienaBiEnv <- R6Class(
       dat$chain_half <- factor(ifelse(dat$chain_below_med, '1st Half', '2nd Half'))
       ##filter(chain_step_id %% thin_factor == 0) %>% 
       # dat$chain_half <- factor(1 + 1*(dat$chain_step_id >= median(dat$chain_step_id)), levels = c(2,1)) ## reverse order for linetype_1 used for Half_2
-      # dat <- self$actor_stats$util_df ##%>% filter(chain_step_id %% thin_factor == 0)
+      # dat <- self$actor_util_df ##%>% filter(chain_step_id %% thin_factor == 0)
       ##
       stratmeans <- dat %>% group_by(strategy, chain_half) %>% 
         summarize(n=n(), mean=mean(utility, na.rm=T), sd=sd(utility, na.rm=T))
@@ -1493,7 +3119,7 @@ SaomNkRSienaBiEnv <- R6Class(
         facet_grid( chain_half ~ .) +
         geom_vline(data = stratmeans, aes(xintercept = mean, color=strategy), linetype=2, linewidth=.9) +
         # geom_vline(xintercept = 0, linetype=2, linewidth=.9, color='gray')+
-        theme_bw()
+        theme_bw() 
       print(plt)
       if(return_plot)
         return(plt)
@@ -1504,11 +3130,11 @@ SaomNkRSienaBiEnv <- R6Class(
                                                                       return_plot=FALSE
                                                                       ) {
       ## actor strategy
-      if ( attr(self$strat_coCovar, 'nodeSet') != 'ACTORS' )
-        stop("Actor Strategy self$strat_coCovar not set.")
-      actor_strat <- as.factor( self$strat_coCovar )
+      if ( attr(self$strat_1_coCovar, 'nodeSet') != 'ACTORS' )
+        stop("Actor Strategy self$strat_1_coCovar not set.")
+      actor_strat <- as.factor( self$strat_1_coCovar )
       ## Compare 2 actors utilty
-      dat <- self$actor_stats$util_df %>%  
+      dat <- self$actor_util_df %>%  
         mutate(
           strategy = actor_strat[ actor_id ] ,
           chain_below_med =  chain_step_id < median(chain_step_id)
@@ -1916,21 +3542,15 @@ SaomNkRSienaBiEnv <- R6Class(
           size = guide_legend(order = 2, nrow = 2)    # Stacks size legend on two rows if needed
         )
       
-
       
       # 3. Component interaction matrix heatmap
       component_matrix <- self$search_matrix
       component_df <- melt(component_matrix)
       colnames(component_df) <- c("Component1", "Component2", "Interaction")
       
-      
-      
-      
       ##**DEBUG**
       # stop('DEBUG print')
-      
-      
-   
+
       # Replace component numbers with labels in the heatmap data frame
       component_df$Component1 <- factor(component_df$Component1, labels = component_labels)
       component_df$Component2 <- factor(component_df$Component2, labels = component_labels)
@@ -2159,27 +3779,6 @@ SaomNkRSienaBiEnv <- R6Class(
 # For the given example where M = 10 actors, N = 20 components, and a target density of 20%, the resulting density parameter is -1.3862943611198906.
 
 
-## log( (0.2 * 10 * 20) / (0.8 * 10 * 20)  )
-# (0.2 * m1$M * m1$N) / (1 - (0.2 * m1$M * m1$N) )
-
-######
-## log( BI_PROB / (1 - BI_PROB)  ) = Beta_density
-## log( 0.2 / 0.8  ) = -1.386294 Beta_density
-
-
-###############  SIM SETUP ####################################
-
-## 1. Environment determines what types of entities and strategies are permissible
-environ_params <- list(
-  M = 8,        ## Actors
-  N = 16,       ## Components
-  BI_PROB = .2, ## Environmental Density (DGP hyperparameter)
-  component_matrix_start = 'rand', ##**TODO** Implement: 'rand','modular','semi-modular',...
-  rand_seed = 123,
-  name = '_TESTrsienaPayoffs2_'#,
-  ## use starting matrix param that is character ('modular',etc) or random (random seed 12345)
-)
-
 ##-- Variable Covariate
 # strat_mat <- matrix( c(
 #   c(rep(0, 1000)), ## Actor 1
@@ -2194,49 +3793,138 @@ environ_params <- list(
 #   c(rep(1, 1000)),
 #   c(rep(-1, 1000))
 # ), nrow=environ_params$M, byrow=TRUE)
-######### CONSTANT ACTOR STRATEGY ########
-# strat  <- c(rep(-1, round(environ_params$M / 2)), rep(1, round(environ_params$M / 2)))
-strat <- c(-1, 0, 1, -1, 0, 1, -1, 0)
 
+
+#,
+# varDyadCovar = list(
+#   
+# ),
+# coCovar = list(
+#   
+# ),
+# coDyadCovar = list(
+#   
+# ),
+# dyadicCov = list(
+#   
+# )
+
+
+## log( (0.2 * 10 * 20) / (0.8 * 10 * 20)  )
+# (0.2 * m1$M * m1$N) / (1 - (0.2 * m1$M * m1$N) )
+
+######
+## log( BI_PROB / (1 - BI_PROB)  ) = Beta_density
+## log( 0.2 / 0.8  ) = -1.386294 Beta_density
+
+
+
+
+
+
+
+###############  SIM SETUP ####################################
+
+
+
+## 1. Environment determines what types of entities and strategies are permissible
+environ_params <- list(
+  M = 9,        ## Actors
+  N = 18,       ## Components
+  BI_PROB = .15, ## Environmental Density (DGP hyperparameter)
+  component_matrix_start = 'rand', ##**TODO** Implement: 'rand','modular','semi-modular',...
+  rand_seed = 123,
+  visualize_init = T,
+  name = '_TESTrsienaPayoffs3_'#,
+  ## use starting matrix param that is character ('modular',etc) or random (random seed 12345)
+)
+
+
+######### CONSTANT ACTOR STRATEGY ########
+actor_strat <- c(-1,0,1,-1,0,1,-1,0,1)
+component_payoffs <- runif(environ_params$N)
 
 ## 2. Strategies sets the objective function as a linear combination of network stats across DVs
 structure_model <- list(
   dv_bipartite = list(
     name = 'self$bipartite_rsienaDV',
     effects = list( ##**STRUCTURAL EFFECTS -- dyadic/network endogeneity sources**
-      list(effect='density', parameter= -2, fix=F, dv_name='self$bipartite_rsienaDV'), ##interaction1 = NULL
-      list(effect='inPop', parameter= 1, fix=F, dv_name='self$bipartite_rsienaDV'), #interaction1 = NUL
-      list(effect='outAct', parameter= -1, fix=F, dv_name='self$bipartite_rsienaDV')#, #interaction1 = NULL
+      list(effect='density', parameter= -0.1, fix=T, dv_name='self$bipartite_rsienaDV'), ##interaction1 = NULL
+      list(effect='inPop',   parameter= .01,  fix=T, dv_name='self$bipartite_rsienaDV'), #interaction1 = NUL
+      list(effect='outAct',  parameter= .01, fix=T, dv_name='self$bipartite_rsienaDV')#, #interaction1 = NULL
       # list(effect='outInAss', parameter=0, fix=F, dv_name='self$bipartite_rsienaDV'), #interaction1 = NULL
       # list(effect='cycle4', parameter=.5, fix=T, dv_name='self$bipartite_rsienaDV')#, #interaction1 = NULL
     ),
-    coCovars = list( ##**MONADIC CONSTANT COVARIATE EFFECTS -- STRATEGY**
-      list(effect='egoX',parameter=.1, fix=T,dv_name='self$bipartite_rsienaDV',interaction1='self$strat_coCovar',x=strat)#, #interaction1 = NULL
+    coCovars = list( ##**STRATEGY -- MONADIC CONSTANT COVARIATE EFFECTS **
+      list(effect='altX',parameter= 1, fix=T, dv_name='self$bipartite_rsienaDV',interaction1='self$component_1_coCovar',
+           x = component_payoffs ),
+      list(effect='outActX',parameter= .5, fix=T, dv_name='self$bipartite_rsienaDV',interaction1='self$component_2_coCovar',
+           x = component_payoffs ), #interaction1 = NULL
+      list(effect='egoX',parameter= .5, fix=T, dv_name='self$bipartite_rsienaDV',interaction1='self$strat_1_coCovar',
+           x = actor_strat ), #interaction1 = NULL
+      list(effect='inPopX',parameter= .5, fix=T, dv_name='self$bipartite_rsienaDV',interaction1='self$strat_2_coCovar',
+           x = actor_strat )#, #interaction1 = NULL
+      # list(effect=c('outActX','inPopX'),parameter= -.3, fix=T, dv_name='self$bipartite_rsienaDV',interaction1=c('self$strat_1_coCovar','self$strat_2_coCovar'),
+      #      x = c(1,0,-1,1,0,-1,1,0,-1) )#, #interaction1 = NULL
+      # list(effect='egoXinPop',parameter=.8, fix=T,dv_name='self$bipartite_rsienaDV',interaction1='self$strat_1_coCovar',
+      #      x = c(1, 0, -1, 1, 0, -1, 1, 0) )#, #interaction1 = NULL
     ),
     varCovars = list() ##**MONADIC TIME-VARYING COVARIATE EFFECTS -- DYNAMIC STRATEGY PROGRAMS**
   )
 )
-#,
-  # varDyadCovar = list(
-  #   
-  # ),
-  # coCovar = list(
-  #   
-  # ),
-  # coDyadCovar = list(
-  #   
-  # ),
-  # dyadicCov = list(
-  #   
-  # )
+# strat  <- c(rep(-1, round(environ_params$M / 2)), rep(1, round(environ_params$M / 2)))
+# strat <- c(-1, 0, 1, -1, 0, 1, -1, 0)
+
+################## SIM ANALYSIS ########################################
+## 1. INIT SIM object
+m1 <- SaomNkRSienaBiEnv$new(environ_params)
+#
+m1$search_rsiena_multiwave_run(structure_model, waves=1, iterations = 2500, rand_seed = 321)
+#
+m1$search_rsiena_multiwave_process_results()
+#
+m1$search_rsiena_multiwave_plot('utility_strategy_summary', thin_factor = 25)
+#
+m1$search_rsiena_multiwave_plot('K_4panel', thin_factor = 25)
+#
+#
+m1$search_rsiena_multiwave_plot('K_A_strategy_summary', thin_factor = 1)
+m1$search_rsiena_multiwave_plot('K_B1_strategy_summary', thin_factor = 1)
+m1$search_rsiena_multiwave_plot('K_B2_strategy_summary', thin_factor = 1)
+m1$search_rsiena_multiwave_plot('K_C_strategy_summary', thin_factor = 1)
+#
+m1$search_rsiena_multiwave_plot('K_4panel', thin_factor = 1)
+#
+
+
+#
+#
+m1$search_rsiena_multiwave_plot('utility_density_by_strategy', thin_wave_factor = 1)
+#
+#
+# View(m1$actor_wave_stats)
+#
+m1$search_rsiena_multiwave_plot('utility_by_strategy', smooth_method = 'loess', show_utility_points = T, thin_wave_factor = 1)
+m1$search_rsiena_multiwave_plot('utility_by_strategy', smooth_method = 'loess', show_utility_points = F, thin_wave_factor = 1)
+
+ 
+m1$bipartite_matrix_waves[[1]]
+
+##
 
 
 ################## SIM ANALYSIS ########################################
 ## 1. INIT SIM object
 m1 <- SaomNkRSienaBiEnv$new(environ_params)
 ## 2. RUN SIM
-m1$search_rsiena_run(structure_model, iterations=500, get_eff_doc = FALSE, run_seed=1234)
+m1$search_rsiena_run(structure_model, iterations=1000, get_eff_doc = F, run_seed=123)
+## 3. Plot
+m1$search_rsiena_plot()
+#
+m1$search_rsiena_plot('utility_by_strategy', smooth_method = 'loess', show_utility_points = F)
 m1$search_rsiena_plot('utility_density_by_strategy')
+
+
 #
 m1$search_rsiena_plot('utility_by_strategy', smooth_method = 'loess', show_utility_points = T)
 m1$search_rsiena_plot('utility_by_strategy', smooth_method = 'loess', show_utility_points = FALSE)

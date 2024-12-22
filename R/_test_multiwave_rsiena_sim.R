@@ -129,13 +129,14 @@ siena_effects
 
   ## Create Initial Network
   set.seed(123)
-  network_array <- array(NA, dim = c(M, N, W)) # Start with 2 waves
-  network_array[, , 1] <- matrix(rbinom(M * N, 1, prob = 0.2), nrow = M, ncol = N)
-  for (i in 2:W) {
-    network_array[, , W] <- network_array[, , W-1] # Start with same network
-    ##
-    ##**TODO** check changing 1 dyad vs. identical networks; check sensitivity
-  }
+  network_array <- array(NA, dim = c(M, N, 2)) # Start with 2 waves
+  network_array[ , , 1] <- matrix(rbinom(M * N, 1, prob = 0.2), nrow = M, ncol = N)
+  network_array[ , , 2] <- network_array[ , , 1]
+  # for (i in 2:W) {
+  #   network_array[, , W] <- network_array[, , W-1] # Start with same network
+  #   ##
+  #   ##**TODO** check changing 1 dyad vs. identical networks; check sensitivity
+  # }
 
   ACTORS <- sienaNodeSet(M, nodeSetName = "Actors")
   COMPONENTS <- sienaNodeSet(N, nodeSetName = "Components")
@@ -144,33 +145,34 @@ siena_effects
   siena_network <- sienaDependent(network_array, type = "bipartite", nodeSet = c("Actors", "Components"), allowOnly = FALSE)
 
   ## Create Covariates
-  group_covar <- coCovar(groupMembership) # Constant covariate
-  strategy_covar <- varCovar(strategy)    # Time-varying covariate
+  strategy_covar <- coCovar(groupMembership) # Constant covariate
+  # strategy_covar <- varCovar(strategy)    # Time-varying covariate
 
   ## RSiena Data Object
-  siena_data <- sienaDataCreate(siena_network, group_covar, strategy_covar, nodeSets = list(ACTORS,COMPONENTS))
+  siena_data <- sienaDataCreate(siena_network, strategy_covar, nodeSets = list(ACTORS,COMPONENTS))
 
   ## Define Effects
   effects <- getEffects(siena_data)
   effectsDocumentation(effects)
-  effects <- includeEffects(effects, density, parameter = dens)
+  effects <- includeEffects(effects, density)
+  effects <- setEffect(effects, density, parameter = dens)
   effects <- includeEffects(effects, egoX, interaction1 = "strategy_covar") ## parameter = ego
-  effects <- includeEffects(effects, sameEgoInDist2, interaction1 = "group_covar")
+  effects <- includeEffects(effects, sameEgoInDist2, interaction1 = "strategy_covar")
 
   
   
   
   ##**--------BEGIN MULTIWAVE NETWORK SIMULATION FUNCTION HERE----------**
-
+  
   ## Algorithm Settings ## input argument or default saved algorithm (?)
   siena_algorithm <- sienaAlgorithmCreate(projname = "bipartite_sim", useStdInits = FALSE,
                                           cond = FALSE, nsub = 0, simOnly = TRUE, n3 = 100)
 
   ## Simulate the First Wave
-  first_sim <- siena07(siena_algorithm, data = siena_data, effects = effects, returnDeps = TRUE)
+  first_sim <- siena07(siena_algorithm, data = siena_data, effects = effects, returnDeps = TRUE, batch=T)
 
   ## Simulate Consecutive Waves
-  network_array_full <- array(0, dim = c(M, N, W)) # Full wave array
+  network_array_full <- array(0, dim = c(M, N, 2)) # Full wave array
   network_array_full[, , 1:2] <- network_array      # First two waves
 
   for (w in 2:W) {
@@ -298,7 +300,7 @@ SimulateNetworks <- function(n, M, rate, dens, rec, tt, c3,
   V0[2*(1:(n %/% 2))] <- 1 # equal binary
   V1 <- rnorm(n, 0, 1)
   
-  
+  ##---------- 1. Initial 2-Wave Array ---------------------------------------
   # Create initial 2-wave data to get a suitable data structure.
   # arbitrarily, this initial network has an expected average degree of 3
   X0 <- matrix(rbinom(n*n,1,3/(n-1)),n,n)
@@ -309,11 +311,14 @@ SimulateNetworks <- function(n, M, rate, dens, rec, tt, c3,
   X0[2,1] <- 1
   X1[1,2] <- 1
   X1[2,1] <- 0
+  
+  ##  INITAL 2-Wave Array
   XX <- array(NA,c(n,n,2))
   XX[,,1] <- X0
   XX[,,2] <- X1
   
   
+  ##---------- 2. RSiena: Data, Effects, Model, 1st Sim -------------------------
   # With this data structure, we now can create the data.
   Va <- coCovar(V0)
   Vb <- coCovar(V1)
@@ -352,6 +357,56 @@ SimulateNetworks <- function(n, M, rate, dens, rec, tt, c3,
   # Simulate the first wave.
   InitSim   <- siena07(InitAlg, data=InitData, eff=InitEff0,
                        returnDeps=TRUE, batch=TRUE, silent=TRUE)
+  
+  
+  
+  ##---------- 3. Multiwave Simulation Function Start -------------------------
+  
+  W <- 4
+  rate <- 0.2
+  
+  # Now prepare for simulating waves 2 to M.
+  # Create empty result network.
+  Xs <- array(0, dim=c(self$M,self$N,W))
+  # The rate parameter value from the function call is reinstated in InitEff.
+  InitEff <- InitEff0
+  InitEff <- setEffect(InitEff, Rate, type="rate", initialValue = rate)
+  
+  
+  sink()
+  for (w in 1:W){
+    # Note that we start this loop with a previously simulated network.
+    # Transform the previously simulated network
+    # from edge list into adjacency matrix
+    XXsim <- matrix(0,self$M,self$N)
+    nsim  <- self$rsiena_algorithm$n3
+    XXsim[ self$rsiena_model$sims[[nsim]][[1]]$X[[1]][,1:2] ]  <- self$rsiena_model$sims[[nsim]][[1]]$X[[1]][,3] ##**TODO** CHECK Structure
+    # Put simulated network into the result matrix.
+    Xs[,,w] <- XXsim
+    # Put simulated network in desired places for the next simulation
+    XX[,,2] <- XX[,,1] # used only to get the data structure
+    XX[,,1] <- XXsim
+    
+    
+    if (m < M){
+      # The following is only to prevent the error that would occur
+      # in the very unlikely event XX[,,1] == XX[,,2].
+      if (identical(XX[,,1], XX[,,2])){XX[1,2,1] <- 1 - XX[1,2,2]}
+      # Specify the two-wave network data set starting with XX[,,1].
+      X <- sienaDependent(XX, allowOnly = FALSE)
+      # Simulate wave m+1 starting at XX[,,1] which is the previous XXsim
+      InitData  <- sienaDataCreate(X, Va, Vb)
+      InitSim <- siena07(InitAlg, data=InitData, eff=InitEff,
+                         returnDeps=TRUE, batch=TRUE, silent=TRUE)
+    }
+    
+    
+  }
+  
+  
+  
+  
+  ##---------- 3. Multiwave Simulation Function Start -------------------------
   
   
   # Now prepare for simulating waves 2 to M.
