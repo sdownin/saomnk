@@ -1,0 +1,256 @@
+
+
+-----------------------------------
+New Analysis started.
+Date and time: 03/01/2025 03:59:38
+New results follow.
+-----------------------------------
+
+RSiena version 1.4.7 (20 Feb 24)
+
+
+@1
+Simulations.
+============
+
+Current random number seed is 12345.
+Effects object used: self$rsiena_effects 
+Estimation method: conditional moment estimation.
+Conditioning variable is the total number of observed changes ("distance") 
+in behavioral variable  
+Distance for simulations is    1 .
+Standard errors are estimated with the likelihood ratio method.
+Dolby method (regression on scores) is used.
+Initial value of gain parameter is  0.2000000.
+Reduction factor for gain parameter is  0.5000000.
+Number of subphases in Phase 2 is 1.
+
+Initial parameter values are 
+  0. Rate parameter                           0.1832
+  1. eval:  outdegree (density)                                    0.0000  (fixed) 
+  2. eval:  indegree - popularity                                  0.0000  (fixed) 
+  3. eval:  outdegree - activity                                   0.0000  (fixed) 
+  4. eval:  self$component_1_coCovar alter                         0.0000  (fixed) 
+  5. eval:  outd. act.^(1/0.5) weighted self$component_1_coCovar   0.0000  (fixed) 
+  6. eval:  self$strat_1_coCovar ego                               0.0000  (fixed) 
+  7. eval:  ind. pop.^(1/0.3) weighted self$strat_2_coCovar        0.0000  (fixed) 
+
+
+Values of target statistics are
+  1. Number of ties                                                    1151.0000
+  2. Sum of squared indegrees                                          13801.0000
+  3. Sum of squared outdegrees                                         110401.0000
+  4. Sum of indegrees x self$component_1_coCovar                          0.1631
+  5. outdegree act.^(1/0.5) weighted self$component_1_coCovar            15.4926
+  6. Sum of outdegrees x self$strat_1_coCovar                            -1.0000
+  7. indegree pop.^(1/0.3) weighted self$strat_2_coCovar                  0.0000
+These were calculated from the data.
+
+ 7 parameters, 7 statistics
+
+All parameters are fixed.
+Therefore the estimation phase is skipped
+ and the program passes on immediately to phase 3
+ for checking the current parameter values and calculating standard errors.
+Estimation of derivatives by the LR method (type 1).
+
+
+@2
+End of stochastic approximation algorithm, phase 3.
+---------------------------------------------------
+
+Total of 500 iterations.
+Parameter estimates based on 0 iterations,
+basic rate parameter as well as 
+convergence diagnostics, covariance and derivative matrices based on 500 iterations.
+
+Information for convergence diagnosis.
+Averages, standard deviations, and t-ratios for deviations from targets:
+  1.   0.0000   0.0000   0.0000     (fixed parameter)
+  2.   0.0000   0.0000   0.0000     (fixed parameter)
+  3.   0.0000   0.0000   0.0000     (fixed parameter)
+  4.  -0.1617   0.2833  -0.5707     (fixed parameter)
+  5. -15.3619  26.9160  -0.5707     (fixed parameter)
+  6.   1.0300   0.8285   1.2432     (fixed parameter)
+  7.   0.0440   4.6714   0.0094     (fixed parameter)
+
+Good convergence is indicated by the t-ratios of non-fixed parameters being close to zero.
+
+Overall maximum convergence ratio =  NA .
+One or more of the t-statistics are rather large.
+Warning. Extremely large standard error of parameter 2 .
+Presumably this parameter must be fixed.
+Warning. Extremely large standard error of parameter 5 .
+Presumably this parameter must be fixed.
+Warning. Extremely large standard error of parameter 7 .
+Presumably this parameter must be fixed.
+
+
+
+@2
+Estimation Results.
+-------------------
+
+Regular end of simulation algorithm.
+Total of 500 iteration steps.
+
+
+@3
+Parameter values
+                
+Rate parameters:
+ 0. Rate parameter                            0.0791  (   0.0754)
+
+Other parameters:
+ 1. eval:  outdegree (density)                                     0.0000  
+ 2. eval:  indegree - popularity                                   0.0000  
+ 3. eval:  outdegree - activity                                    0.0000  
+ 4. eval:  self$component_1_coCovar alter                          0.0000  
+ 5. eval:  outd. act.^(1/0.5) weighted self$component_1_coCovar    0.0000  
+ 6. eval:  self$strat_1_coCovar ego                                0.0000  
+ 7. eval:  ind. pop.^(1/0.3) weighted self$strat_2_coCovar         0.0000  
+
+
+@3
+Simulated statistics
+                    
+Estimated means and standard deviations, standard errors of the mean 
+  1. Number of ties                                            1151.000    0.000   0.0000
+  2. Sum of squared indegrees                                 13801.000    0.000   0.0000
+  3. Sum of squared outdegrees                               110401.000    0.000   0.0000
+  4. Sum of indegrees x self$component_1_coCovar                  0.000    0.283   0.0000
+  5. outdegree act.^(1/0.5) weighted self$component_1_coCovar     0.098   26.916   1.2025
+  6. Sum of outdegrees x self$strat_1_coCovar                     0.021    0.829   0.0365
+  7. indegree pop.^(1/0.3) weighted self$strat_2_coCovar          0.044    4.671   0.2089
+
+Standard errors of the mean are less than s.d./sqrt(n) 
+because of regression on scores (Dolby option). 
+Total computation time 1.3 seconds.
+
+
+-----------------------------------
+New Analysis started.
+Date and time: 03/01/2025 03:59:40
+New results follow.
+-----------------------------------
+
+RSiena version 1.4.7 (20 Feb 24)
+
+
+@1
+Simulations.
+============
+
+Current random number seed is 12345.
+Effects object used: self$rsiena_effects 
+Estimation method: conditional moment estimation.
+Conditioning variable is the total number of observed changes ("distance") 
+in behavioral variable  
+Distance for simulations is    1 .
+Standard errors are estimated with the likelihood ratio method.
+Dolby method (regression on scores) is used.
+Initial value of gain parameter is  0.2000000.
+Reduction factor for gain parameter is  0.5000000.
+Number of subphases in Phase 2 is 1.
+
+Initial parameter values are 
+  0. Rate parameter                           0.1832
+  1. eval:  outdegree (density)                                    0.0000  (fixed) 
+  2. eval:  indegree - popularity                                  0.0000  (fixed) 
+  3. eval:  outdegree - activity                                   0.0000  (fixed) 
+  4. eval:  self$component_1_coCovar alter                         0.0000  (fixed) 
+  5. eval:  outd. act.^(1/0.5) weighted self$component_1_coCovar   0.0000  (fixed) 
+  6. eval:  self$strat_1_coCovar ego                               0.0000  (fixed) 
+  7. eval:  ind. pop.^(1/0.3) weighted self$strat_2_coCovar        0.0000  (fixed) 
+
+
+Values of target statistics are
+  1. Number of ties                                                    1151.0000
+  2. Sum of squared indegrees                                          13801.0000
+  3. Sum of squared outdegrees                                         110401.0000
+  4. Sum of indegrees x self$component_1_coCovar                          0.1631
+  5. outdegree act.^(1/0.5) weighted self$component_1_coCovar            15.4926
+  6. Sum of outdegrees x self$strat_1_coCovar                             1.0000
+  7. indegree pop.^(1/0.3) weighted self$strat_2_coCovar                -11.0000
+These were calculated from the data.
+
+ 7 parameters, 7 statistics
+
+All parameters are fixed.
+Therefore the estimation phase is skipped
+ and the program passes on immediately to phase 3
+ for checking the current parameter values and calculating standard errors.
+Estimation of derivatives by the LR method (type 1).
+
+
+@2
+End of stochastic approximation algorithm, phase 3.
+---------------------------------------------------
+
+Total of 500 iterations.
+Parameter estimates based on 0 iterations,
+basic rate parameter as well as 
+convergence diagnostics, covariance and derivative matrices based on 500 iterations.
+
+Information for convergence diagnosis.
+Averages, standard deviations, and t-ratios for deviations from targets:
+  1.   0.0000   0.0000   0.0000     (fixed parameter)
+  2.   0.0000   0.0000   0.0000     (fixed parameter)
+  3.   0.0000   0.0000   0.0000     (fixed parameter)
+  4.  -0.1617   0.2833  -0.5707     (fixed parameter)
+  5. -15.3619  26.9160  -0.5707     (fixed parameter)
+  6.  -0.9700   0.8285  -1.1707     (fixed parameter)
+  7.  10.7580   5.9247   1.8158     (fixed parameter)
+
+Good convergence is indicated by the t-ratios of non-fixed parameters being close to zero.
+
+Overall maximum convergence ratio =  NA .
+One or more of the t-statistics are rather large.
+Warning. Extremely large standard error of parameter 2 .
+Presumably this parameter must be fixed.
+Warning. Extremely large standard error of parameter 5 .
+Presumably this parameter must be fixed.
+Warning. Extremely large standard error of parameter 7 .
+Maybe the algorithm diverged.
+
+
+
+@2
+Estimation Results.
+-------------------
+
+Regular end of simulation algorithm.
+Total of 500 iteration steps.
+
+
+@3
+Parameter values
+                
+Rate parameters:
+ 0. Rate parameter                            0.0791  (   0.0754)
+
+Other parameters:
+ 1. eval:  outdegree (density)                                     0.0000  
+ 2. eval:  indegree - popularity                                   0.0000  
+ 3. eval:  outdegree - activity                                    0.0000  
+ 4. eval:  self$component_1_coCovar alter                          0.0000  
+ 5. eval:  outd. act.^(1/0.5) weighted self$component_1_coCovar    0.0000  
+ 6. eval:  self$strat_1_coCovar ego                                0.0000  
+ 7. eval:  ind. pop.^(1/0.3) weighted self$strat_2_coCovar         0.0000  
+
+
+@3
+Simulated statistics
+                    
+Estimated means and standard deviations, standard errors of the mean 
+  1. Number of ties                                            1151.000    0.000   0.0000
+  2. Sum of squared indegrees                                 13801.000    0.000   0.0000
+  3. Sum of squared outdegrees                               110401.000    0.000   0.0000
+  4. Sum of indegrees x self$component_1_coCovar                  0.000    0.283   0.0000
+  5. outdegree act.^(1/0.5) weighted self$component_1_coCovar     0.098   26.916   1.2025
+  6. Sum of outdegrees x self$strat_1_coCovar                     0.021    0.829   0.0365
+  7. indegree pop.^(1/0.3) weighted self$strat_2_coCovar         -0.242    5.925   0.2650
+
+Standard errors of the mean are less than s.d./sqrt(n) 
+because of regression on scores (Dolby option). 
+Total computation time 1.31 seconds.
