@@ -1,3 +1,19 @@
+*.RData
+*.Rhistory
+R/*.RData
+R/*.Rhistory
+
+*.pdf
+R/*.pdf
+
+*.log
+*.log.txt
+R/*.log
+R/*.log.txt
+
+
+
+
 # Ignore all compressed file types
 *.zip
 *.tar.gz
@@ -51,6 +67,7 @@ dist/
 node_modules/
 vendor/
 .Rproj.user/
+_test_txt/
 
 # Ignore large data files
 *.csv

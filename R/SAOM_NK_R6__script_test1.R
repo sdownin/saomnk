@@ -7,20 +7,26 @@
 ##
 #######################
 
+## clear environment
 rm(list=ls())
 
 ## Directories
 dir_proj <- 'C://Users//sdr8y//OneDrive - University of Missouri//Research//Search_networks//SaoMNK//R'
 dir_data <- 'D://Search_networks'
 
+## Working director
 setwd(dir_proj)
 
-###############   DEPENDENCIES ###############################
-SaomNkRSienaBiEnv <- source(file.path(dir_proj, 'SAOM_NK_R6_model.R'))$value
-
-
 ## default settings: Users do not change; TODO: implment within restricted class attributes
-dv_name='self$bipartite_rsienaDV'
+dv_name <- 'self$bipartite_rsienaDV'
+
+###############  Load R6 Class DEPENDENCIES ############################
+## Biparite Environment Search Simulation Class
+SaomNkRSienaBiEnv <- source(file.path(dir_proj, 'SAOM_NK_R6_model.R'))$value
+## RSiena search Class
+SaomNkRSienaBiEnv_search_rsiena <- source(file.path(dir_proj, 'SAOM_NK_R6_search_rsiena_model.R'))$value
+
+
 
 
 
@@ -116,6 +122,26 @@ m1$search_rsiena_multiwave_plot('K_4panel', thin_factor = 1)
 
 
 ##
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ################## SIM ANALYSIS ########################################

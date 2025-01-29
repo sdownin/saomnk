@@ -1,0 +1,713 @@
+---
+title: 'SaoMNK Tutorial: Getting Started Endogenizing the Strategic Search Landscape'
+author: "S. Downing"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged 
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code.
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*.
+
+```{r dependencies, include=FALSE}
+#   html_document:
+#     toc: true
+#     toc_depth: '2'
+#     df_print: paged
+#   html_notebook:
+#     number_sections: true
+#     toc: true
+#     toc_depth: 2
+#     highlight: tango
+#     keep_tex: true
+# fontsize: 12pt
+# linestretch: 1.5
+# documentclass: article
+###
+# classoption: fleqn
+# geometry: margin=1in
+# bibliography: references.bib
+# linkcolor: blue
+# output: html_notebook
+# csl: academy-of-management-review.csl
+####
+# ## General settings to hide code
+# knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+
+# rm(list=ls())  ## uncomment to clear environ before run
+########################
+##
+##   SAOM-NK Runscript:
+##
+##   1. Estimation Recovery 
+##
+##
+#######################
+library(plyr)
+library(dplyr)
+library(uuid)
+library(ggpubr)
+library(data.table)
+
+
+##****************************************************##
+## ITERATIONS
+MAX_ITERATIONS <- 3000
+## Replications
+nreps <- 20
+##****************************************************##
+#
+.ts <- gsub('\\.','',as.character(as.numeric(Sys.time())))
+#
+# .uuid <- UUIDgenerate()
+##  DIRECTORY
+# grid.dir <- sprintf('_SAOMNK_sensitivity_start0_rand20__%s', .ts )
+
+
+###############  Load R DEPENDENCIES ############################
+## Directories
+dir_ext <- 'D:\\Search_networks'
+dir_r <- 'C:\\Users\\sdr8y\\OneDrive - University of Missouri\\Research\\Search_networks\\SaoMNK\\R'
+# dir_proj <- file.path( dir_ext, grid.dir )
+# dir_proj_results <- file.path(dir_proj, 'sensitivity_results')
+
+# setwd(dir_ext)
+
+# ## script run directory
+# if (!dir.exists(dir_proj)) {
+#   dir.create(dir_proj)
+# }
+
+## default settings: Users do not change; TODO: implment within restricted class attributes
+DV_NAME <- 'self$bipartite_rsienaDV'
+
+
+###############  Load R6 Class DEPENDENCIES ############################
+## Biparite Environment Search Simulation Class
+SaomNkRSienaBiEnv <- source(file.path(dir_r, 'SAOM_NK_R6_model.R'))$value
+# ## RSiena search Class
+# SaomNkRSienaBiEnv_search_rsiena <- source(file.path(dir_proj, 'SAOM_NK_R6_search_rsiena_model.R'))$value
+###########
+
+
+
+
+#########################################################
+## FILE MANAGEMENT
+#########################################################
+# ## RDS files saved in grid_results directory within the gridsearch job directory
+# if (!dir.exists(dir_proj_results)) {
+#   dir.create(dir_proj_results)
+# } else {
+#   # ## if img dir exists, remove simufiles from this run list by UUIDs in existing plots
+#   # plotted <- dir(dir_proj_results, pattern = '\\.png')
+#   # skipuuids <- unique(sapply(strsplit(plotted, '_'), function(x) x[1] ))
+#   # dropids <- unname(sapply(skipuuids, function(x) grep(x, simfiles)))
+#   # if(length(dropids))
+#   #   simfiles <- simfiles[ -dropids ] ## drop files with UUIDs already plotted
+# }
+
+
+
+# ## Working director
+# setwd(dir_proj)
+
+
+
+
+# #################### FUNCTIONS ####################################
+# getGridRunNameFromScenario <- function(scenario, environ_seed_params) {
+#   varnames <- names(scenario)
+#   vals <- unname(scenario)
+#   outvec <- c()
+#   for (i in 1:length(varnames)) {
+#     if (varnames[i] %in% environ_seed_params) {
+#       outvec <- c(outvec, paste(varnames[i], vals[i], sep='='))
+#     }
+#   }
+#   outstr <- paste(outvec, collapse='_')
+#   return(sprintf('_%s_', outstr))
+# }
+
+```
+
+Configure the Environment Params
+
+```{r }
+
+
+strategies <- list(
+  egoX   =   c(0), #c(-1,0, 1),
+  inPopX =   c(0) #c(1,0, -1)
+)
+
+##_-----
+
+environ_params <- list(
+  M = 3,        ## Actors
+  N = 4,       ## Components
+  BI_PROB = 0, ## Environmental Density (DGP hyperparameter)
+  component_matrix_start = 'rand', ##**TODO** Implement: 'rand','modular','semi-modular',...
+  rand_seed = 1234,
+  plot_init = T,
+  name = '_test_tutorial_nb_'
+)
+```
+
+Configure the `structure_model` that contains the components of the SAOM objective function, 
+passed into the `RSiena::siena7()` 
+
+```{r}
+
+## 2.b. Component Payoffs vector
+set.seed(12345)
+component_payoffs <-  runif(environ_params$N, min = 0, max = 1)
+## 2. Strategies sets the objective function as a linear combination of network stats across DVs
+#
+actor_strats_list <- lapply(strategies, function(strat) rep(strat,  environ_params$M/length(strat)) )
+
+#
+structure_model <- list(
+  dv_bipartite = list(
+    name = 'self$bipartite_rsienaDV',
+    effects = list( ##**STRUCTURAL EFFECTS -- dyadic/network endogeneity sources**
+      list(effect='density', parameter= 0, fix=T, dv_name=DV_NAME), ##interaction1 = NULL
+      list(effect='inPop',   parameter= 0, fix=T, dv_name=DV_NAME), #interaction1 = NUL
+      list(effect='outAct',  parameter= 0, fix=T, dv_name=DV_NAME)
+    ),
+    ## COVARIATE EFFECTS
+    coCovars = list( 
+      ##** COMPONENTS : MONADIC CONSTANT COVARIATE EFFECTS **##
+      list(effect='altX',   parameter= 1e-11,  fix=T,dv_name=DV_NAME, 
+           interaction1='self$component_1_coCovar', x = component_payoffs 
+      ),
+      ##** STRATEGIES : MONADIC CONSTANT COVARIATE EFFECTS **##
+      list(effect='egoX',   parameter= 0,  fix=T,dv_name=DV_NAME, 
+           interaction1='self$strat_1_coCovar',     x = actor_strats_list[[1]] 
+      ), #interaction1 = NULL
+      list(effect='inPopX', parameter= 0,  fix=T,dv_name=DV_NAME, 
+           interaction1='self$strat_2_coCovar',  x = actor_strats_list[[2]] 
+      )
+    ),
+    varCovars = list() ##**MONADIC TIME-VARYING COVARIATE EFFECTS -- DYNAMIC STRATEGY PROGRAMS**
+  )
+)
+
+```
+
+
+
+```{r}
+
+# ##****************************************##
+# ## II. SIM ANALYSIS 
+# ##****************************************##
+# # ## INIT SIM ENVIRONMENT: 
+# # env1 <- SaomNkRSienaBiEnv$new(environ_params)
+# 
+# ## INIT SIM ENVIRONMENT: 
+env1 <- SaomNkRSienaBiEnv$new(environ_params)
+```
+
+Run RSiena search on the environment parameters list (`environ_params`), 
+using the `structure_model` list set, both configured above. 
+
+```{r echo=FALSE, include=T}
+# 
+# # pd_steps <- env1$M * env1$N
+# pd_steps <- 2 * env1$M 
+# 
+# ITERATIONS <- min( 40 * pd_steps, MAX_ITERATIONS)
+# 
+# ## 1.1. Search 1. SHORT Run
+ ##**TODO: check**
+env1$search_rsiena(
+  structure_model, 
+  get_eff_doc=FALSE, ## GET POSSIBLE RSiena effects for the rsiena_data structures
+  iterations=4, #4 * env1$M * env1$N,
+  run_seed=123, 
+  plot_save=FALSE,
+  return_plot=TRUE
+)
+
+```
+
+```{r}
+
+# cat(sprintf('\nDEBUG RUN: 3. search_rsiena_process_ministep_chain\n'))
+env1$search_rsiena_process_ministep_chain()
+
+```
+
+
+
+
+
+```{r}
+## 4. Process actor statistics (e.g., utility)
+# cat(sprintf('\nDEBUG RUN: 4. search_rsiena_process_actor_stats\n'))
+env1$search_rsiena_process_stats()
+head(env1$actor_util_df)
+```
+
+
+
+
+
+```{r}
+# ##############################################################
+# self <- env1
+# # nwaves <- 5
+# # step_ids <- round(seq(2*self$M*self$N, self$rsiena_model$n3, by=1*self$M))[1:nwaves] ##, length=nwaves))
+# # step_ids <-  self$M + seq(1, self$rsiena_model$n3, by=3)[1:nwaves] ##, length=nwaves))
+# rsiena_phase2_nsub <- 1
+# rsiena_n2start_scale <- 1
+# iterations <- 1000
+# rand_seed <- 54321
+# returnDeps <- T
+# returnChains <- T
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# 2. Variable Parameters with `thetaValues = theta_matrix`
+
+
+
+```{r}
+# get_eff_doc=FALSE,
+# iterations=1000, 
+# run_seed=123, 
+# plot_save=FALSE,
+# return_plot=FALSE
+# #
+# env2$search_rsiena_shocks(
+#   array_bi_net,
+#   structure_model, 
+#   theta_matrix
+# )
+# env2$search_rsiena_process_ministep_chain()
+# env2$search_rsiena_process_stats()
+###
+## Environment with variable parameters: Shocks and Dynamic Stratgies 
+env2 <- SaomNkRSienaBiEnv$new(environ_params)
+```
+
+```{r}
+
+max_waves <- 15
+array_bi_net <-  env1$bi_env_arr[ , , 1:min(max_waves, dim(env1$bi_env_arr)[3]) ] ##**MAIN STEP**
+# self$bi_env_arr[,,1] + self$bi_env_arr[,,2] + self$bi_env_arr[,,3] 
+# self$bi_env_arr[,,4] + self$bi_env_arr[,,5] + self$bi_env_arr[,,6] 
+print(array_bi_net)
+
+
+```
+
+
+
+```{r}
+#
+params_norates <- which(self$rsiena_effects$type[self$rsiena_effects$include] != 'rate')
+names_theta_in <- self$rsiena_effects$effectName[self$rsiena_effects$include][params_norates]
+theta_in <- self$rsiena_effects$parm[self$rsiena_effects$include][params_norates] ## skip the rate parameter _effect[1]
+
+# nrows <- self$rsiena_model$n3
+nrows <- env1$M * 10
+ncols <- length(theta_in)
+shock.chunks <- 4  ## before|after
+theta_matrix <- matrix(NA,  nrow = nrows, ncol=ncols  )
+for (j in 1:ncols) {
+  nchunks   <- floor( nrows / shock.chunks ) 
+  beta_seq_1 <- rep(   1 * theta_in[j], nchunks * 1 )  ## How many pd_chunks at what theta value?
+  beta_seq_2 <- rep(  1 * theta_in[j], nchunks * 1 ) ## number of pd_chunks at what theta value?
+  beta_seq_3 <- rep(  1 * theta_in[j], nchunks * 2  ) ## number of pd_chunks at what theta value?
+  vec <- c( beta_seq_1, beta_seq_2, beta_seq_3 )
+  rowdiff <- nrow(theta_matrix) - length(vec)
+  if (rowdiff != 0) {
+    vec <- c( vec, rep(vec[length(vec)], round(abs(rowdiff))) ) ## add the last elements again if too short
+  }
+  #
+  theta_matrix[, j] <- vec
+}
+
+print(theta_matrix)
+
+```
+
+
+
+
+```{r}
+# array_bi_net,
+# structure_model, 
+# theta_matrix,
+# get_eff_doc=FALSE,
+# rsiena_phase2_nsub=1,
+# rsiena_n2start_scale=1, 
+# iterations=1000, 
+# run_seed=123, 
+# plot_save=FALSE,
+# return_plot=FALSE
+
+env2$search_rsiena_shocks(
+  array_bi_net = array_bi_net,
+  structure_model = structure_model,
+  theta_matrix = theta_matrix
+)
+```
+
+
+
+
+
+```{r}
+
+##
+env2$search_rsiena_process_ministep_chain()
+##
+env2$search_rsiena_process_stats()
+
+
+```
+
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+
+```{r}
+# snapshot_ids <- round(seq(1, dim(env2$bi_env_arr)[3], length=3))
+snapshot_ids <- 1:dim(env2$bi_env_arr)[3]
+# plotlist <- list()
+# for (i in 1:length(snapshot_ids)) {
+#   chain_step <- snapshot_ids[ i ]
+#   plotlist[[i]] <-  self$plot_bipartite_system_from_mat(
+#     self$bi_env_arr[,,chain_step], 
+#     chain_step
+#   ) 
+# }
+# ggarrange(plotlist = plotlist, nrow=length(plotlist))
+for (i in 1:length(snapshot_ids)) {
+  step <- snapshot_ids[ i ]
+  env2$plot_bipartite_system_from_mat(env2$bi_env_arr[,,step], step)
+}
+```
+
+
+
+
+```{r, warning=FALSE, echo=FALSE}
+
+env2$plot_strategy_microinterp() + ggtitle('Utility by Strategy\nLoess Curves vs. Periodwise Avg. in Black')
+
+```
+
+```{r, warning=FALSE, echo=FALSE}
+
+
+env2$plot_actor_microinterp() + ggtitle('Utility by Actor\nLoess Curves vs. Periodwise Avg. in Black')
+
+```
+
+
+
+
+```{r, fig.height=9, fig.width=6}
+# env2$actor_util_df %>% 
+#   ggplot(aes(x=chain_step_id, y=utility, fill=strategy, color=strategy)) + 
+#   geom_point(alpha=.2, size=2) + 
+#   geom_smooth(aes(linetype=actor_id), method='loess', alpha=.02, span=.5) +
+#   geom_hline(yintercept = 0, linetype=2) +
+#   theme_bw() + ggtitle('Actor Utility Curves')
+
+
+env2$actor_stats_df %>% 
+  ggplot(aes(x=chain_step_id, y=value, fill=strategy, color=strategy)) + 
+  geom_point(alpha=.2, size=2) + 
+  geom_smooth(aes(linetype=actor_id), method='loess', alpha=.02, span=.5) +
+  facet_grid(effect_name ~ ., scales='free') +
+  geom_hline(yintercept = 0, linetype=2) +
+  theme_bw() + ggtitle('Actor Utility Function Components')
+```
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+
+
+
+```{r}
+
+# env2$actor_util_diff_df %>% ggplot(aes(x=chain_step_id, y=utility, fill=strategy, color=strategy)) + 
+#   geom_point(alpha=.2, size=2) + 
+#   geom_smooth(aes(linetype=actor_id), method='loess', alpha=.02, span=.6) +
+#   geom_hline(yintercept = 0, linetype=2) +
+#   theme_bw() + ggtitle('Actor Utility Difference[t-1, t] Loess Curves')
+
+
+
+```
+
+
+
+
+
+
+
+
+# 3. Different Strategies
+
+# 3.1 
+
+```{r }
+
+
+##_-----
+
+environ_params <- list(
+  M = 3,        ## Actors
+  N = 4,       ## Components
+  BI_PROB = 0, ## Environmental Density (DGP hyperparameter)
+  component_matrix_start = 'rand', ##**TODO** Implement: 'rand','modular','semi-modular',...
+  rand_seed = 1234,
+  plot_init = F,
+  name = '_test_tutorial_nb_'
+)
+
+```
+
+
+```{r}
+# get_eff_doc=FALSE,
+# iterations=1000, 
+# run_seed=123, 
+# plot_save=FALSE,
+# return_plot=FALSE
+# #
+# env3$search_rsiena_shocks(
+#   array_bi_net,
+#   structure_model, 
+#   theta_matrix
+# )
+# env3$search_rsiena_process_ministep_chain()
+# env3$search_rsiena_process_stats()
+###
+## Environment with variable parameters: Shocks and Dynamic Stratgies 
+env3 <- SaomNkRSienaBiEnv$new(environ_params)
+```
+
+```{r}
+
+#max_waves <- 15
+#array_bi_net <-  env3$bi_env_arr[ , , 1:min(max_waves, dim(env3$bi_env_arr)[3]) ] ##**MAIN STEP**
+# self$bi_env_arr[,,1] + self$bi_env_arr[,,2] + self$bi_env_arr[,,3] 
+# self$bi_env_arr[,,4] + self$bi_env_arr[,,5] + self$bi_env_arr[,,6] 
+array_bi_net <- array(c(env3$bipartite_matrix, env3$bipartite_matrix), 
+                      dim=c(env3$M,  env3$N, 2))
+print(array_bi_net)
+
+
+```
+
+
+
+```{r}
+
+strategies <- list(
+  egoX   =   c(-1, 0, 1),
+  inPopX =   c( 1, 0, -1)
+)
+
+
+## 2.b. Component Payoffs vector
+set.seed(12345)
+component_payoffs <-  runif(environ_params$N, min = 0, max = 1)
+## 2. Strategies sets the objective function as a linear combination of network stats across DVs
+#
+actor_strats_list <- lapply(strategies, function(strat) rep(strat,  environ_params$M/length(strat)) )
+
+#
+structure_model <- list(
+  dv_bipartite = list(
+    name = 'self$bipartite_rsienaDV',
+    effects = list( ##**STRUCTURAL EFFECTS -- dyadic/network endogeneity sources**
+      list(effect='density', parameter= 0, fix=T, dv_name=DV_NAME), ##interaction1 = NULL
+      list(effect='inPop',   parameter= 0, fix=T, dv_name=DV_NAME), #interaction1 = NUL
+      list(effect='outAct',  parameter= 0, fix=T, dv_name=DV_NAME)
+    ),
+    ## COVARIATE EFFECTS
+    coCovars = list( 
+      ##** COMPONENTS : MONADIC CONSTANT COVARIATE EFFECTS **##
+      list(effect='altX',   parameter= .01,  fix=T,dv_name=DV_NAME, 
+           interaction1='self$component_1_coCovar', x = component_payoffs 
+      ),
+      ##** STRATEGIES : MONADIC CONSTANT COVARIATE EFFECTS **##
+      list(effect='egoX',   parameter= .01,  fix=T,dv_name=DV_NAME, 
+           interaction1='self$strat_1_coCovar',     x = actor_strats_list[[1]] 
+      ), #interaction1 = NULL
+      list(effect='inPopX', parameter= .01,  fix=T,dv_name=DV_NAME, 
+           interaction1='self$strat_2_coCovar',  x = actor_strats_list[[2]] 
+      )
+    ),
+    varCovars = list() ##**MONADIC TIME-VARYING COVARIATE EFFECTS -- DYNAMIC STRATEGY PROGRAMS**
+  )
+)
+
+#
+structeffs <- structure_model$dv_bipartite$effects %>% ldply(as.data.frame) # use previous effects
+coCovars   <- structure_model$dv_bipartite$coCovars %>% ldply(function(x)as.data.frame(x[! names(x)%in%c('interaction1','x')])) 
+effects    <- structeffs %>% bind_rows(coCovars)
+# names_theta_in <- effects$effectName[effects$include][params_norates]
+theta_in       <- effects$parameter
+
+# nrows <- envx$rsiena_model$n3
+nrows <- envx$M * 8
+ncols <- length(theta_in)
+shock.chunks <- 4  ## before|after
+theta_matrix <- matrix(NA,  nrow = nrows, ncol=ncols  )
+for (j in 1:ncols) {
+  nchunks   <- floor( nrows / shock.chunks ) 
+  beta_seq_1 <- rep(  1 * theta_in[j], nchunks * 1 )  ## How many pd_chunks at what theta value?
+  beta_seq_2 <- rep(  1 * theta_in[j], nchunks * 1 ) ## number of pd_chunks at what theta value?
+  beta_seq_3 <- rep(  1 * theta_in[j], nchunks * 2 ) ## number of pd_chunks at what theta value?
+  vec <- c( beta_seq_1, beta_seq_2, beta_seq_3 )
+  rowdiff <- nrow(theta_matrix) - length(vec)
+  if (rowdiff != 0) {
+    vec <- c( vec, rep(vec[length(vec)], round(abs(rowdiff))) ) ## add the last elements again if too short
+  }
+  #
+  theta_matrix[, j] <- vec
+}
+
+print(theta_matrix)
+
+```
+
+
+
+
+```{r}
+# array_bi_net,
+# structure_model, 
+# theta_matrix,
+# get_eff_doc=FALSE,
+# rsiena_phase2_nsub=1,
+# rsiena_n2start_scale=1, 
+# iterations=1000, 
+# run_seed=123, 
+# plot_save=FALSE,
+# return_plot=FALSE
+
+env3$search_rsiena_shocks(
+  array_bi_net = array_bi_net,
+  structure_model = structure_model,
+  theta_matrix = theta_matrix,
+  digits = 4
+)
+```
+
+
+
+
+
+```{r}
+
+##
+env3$search_rsiena_process_ministep_chain()
+##
+env3$search_rsiena_process_stats()
+
+
+```
+
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+
+```{r}
+snapshot_ids <- c(1,2,3, seq(4, dim(env3$bi_env_arr)[3], length=3 ))
+for (i in 1:length(snapshot_ids)) {
+  step <- snapshot_ids[ i ]
+  env3$plot_bipartite_system_from_mat(env3$bi_env_arr[,,step], step)
+}
+# plotlist <- list()
+# for (i in 1:length(snapshot_ids)) {
+#   chain_step <- snapshot_ids[ i ]
+#   plotlist[[i]] <-  self$plot_bipartite_system_from_mat(
+#     self$bi_env_arr[,,chain_step], 
+#     chain_step
+#   ) 
+# }
+# ggarrange(plotlist = plotlist, nrow=length(plotlist))
+```
+
+
+
+
+```{r, warning=FALSE, echo=FALSE}
+
+env3$plot_strategy_microinterp() + 
+  ggtitle('Utility by Strategy\nLoess Curves vs. Periodwise Avg. in Black')
+
+```
+
+```{r, warning=FALSE, echo=FALSE}
+
+env3$plot_actor_microinterp() + 
+  ggtitle('Utility by Actor\nLoess Curves vs. Periodwise Avg. in Black')
+
+```
+
+
+
+
+```{r, fig.height=9, fig.width=7, fig.dpi=800}
+# env3$actor_util_df %>% 
+#   ggplot(aes(x=chain_step_id, y=utility, fill=strategy, color=strategy)) + 
+#   geom_point(alpha=.2, size=2) + 
+#   geom_smooth(aes(linetype=actor_id), method='loess', alpha=.02, span=.5) +
+#   geom_hline(yintercept = 0, linetype=2) +
+#   theme_bw() + ggtitle('Actor Utility Curves')
+
+# effect_theta
+
+
+##**TODO value_weighted** 
+##**Multiply by the theta value in the function processing actor_stats_df **
+# 
+# env3$actor_stats_df %>%  #mutate(value_adj = value * theta_matrix[unique(chain_step_id), unique(effect_id)]) %>%
+#   ggplot(aes(x=chain_step_id, y=value, fill=strategy, color=strategy)) + 
+#   geom_point(alpha=.2, size=2) + 
+#   geom_smooth(aes(linetype=actor_id), method='loess', alpha=.02, span=.5) +
+#   facet_grid(effect_name ~ ., scales='free') +
+#   geom_hline(yintercept = 0, linetype=2) +
+#   theme_bw() + ggtitle('Utility Function Components')
+
+env3$plot_utility_components(loess_span=0.5)
+
+## ggtitle('Actor Utility Contributed by Components')
+```
+
+
+```{r,  fig.height=9, fig.width=7, fig.dpi=800}
+
+env3$plot_utility_components(use_contributions=TRUE, loess_span=0.25)
+
+```
+
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.

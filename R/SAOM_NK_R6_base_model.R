@@ -17,6 +17,7 @@ library(grid) # Load the necessary library for grid.text
 library(plyr)
 library(dplyr)
 library(tidyr)
+library(uuid)
 
 
 
@@ -33,6 +34,7 @@ SaomNkRSienaBiEnv_base <- R6Class(
     ITERATION = 0,
     TIMESTAMP = NULL,
     SIM_NAME = NULL,
+    UUID = NULL,
     #
     M = NULL,                # Number of actors
     N = NULL,                # Number of components
@@ -46,11 +48,15 @@ SaomNkRSienaBiEnv_base <- R6Class(
     social_igraph = NULL,   # Social space projection (network object)
     search_igraph = NULL, # Search space projection (network object)
     #
+    bipartite_matrix_init = NULL, ## cache the init matrix for future reference and plotting
+    #
     bipartite_matrix = NULL,
     social_matrix = NULL,
     search_matrix = NULL,
     #
     bipartite_matrix_waves = list(), ## list of simulated networks for extended multi-wave simulation; implements dynamic strategy choice/changes
+    #
+    bi_env_arr = array(), ## bipartite matrix array from chain of ministeps
     #
     bipartite_rsienaDV = NULL,
     social_rsienaDV = NULL,
@@ -133,20 +139,46 @@ SaomNkRSienaBiEnv_base <- R6Class(
       self$M <- config_environ_params[['M']]
       self$N <- config_environ_params[['N']]
       self$BI_PROB <- config_environ_params[['BI_PROB']]
+      self$UUID <- UUIDgenerate(use.time = T)
       # self$P_change <- config_environ_params[['P_change']]
       #
       # self$bipartite_igraph <- self$generate_bipartite_igraph()
       # self$social_network <- self$project_social_space()
       # self$search_landscape <- self$project_search_space()
-      default_seed <- 123
-      self$rsiena_env_seed <- ifelse(is.null(config_environ_params[['rand_seed']]), 
-                                      default_seed,
-                                      config_environ_params[['rand_seed']])
-      start_bipartite_igraph <- self$random_bipartite_igraph(self$rsiena_env_seed)
-      self$set_system_from_bipartite_igraph( start_bipartite_igraph )
-      #
+      
+      ##--------- INIT COMPONENT MATRIX STRUCTURE --------------------
+      component_mat_init_type <- config_environ_params[['component_matrix_start']]
+      if ( component_mat_init_type  == 'rand' ) 
+      {
+        default_seed <- 123
+        self$rsiena_env_seed <- ifelse(is.null(config_environ_params[['rand_seed']]), 
+                                       default_seed,
+                                       config_environ_params[['rand_seed']])
+        ## 
+        start_bipartite_matrix <- self$random_bipartite_matrix(self$rsiena_env_seed)
+        
+        # } else if (component_mat_init_type == 'modular') {
+        # } else if (component_mat_init_type == 'triangular') {  ## 
+          
+      } 
+      else 
+      {
+        stop(sprintf('Component matrix init type not implemented: %s', component_mat_init_type))
+      }
+      
+      ## Keep init matrix
+      self$bipartite_matrix_init <- start_bipartite_matrix
+      ## SET BIPARTITE NETWORK SYSTEM FROM INIT matrix
+      self$set_system_from_bipartite_matrix( start_bipartite_matrix )
+      ##
       self$TIMESTAMP <- round( as.numeric(Sys.time())*100 )
       self$SIM_NAME <- config_environ_params[['name']]
+    },
+    
+    #
+    set_system_from_bipartite_matrix = function(bipartite_matrix) {
+      bipartite_igraph <- igraph::graph_from_biadjacency_matrix(bipartite_matrix, directed = F, mode = 'all')
+      self$set_system_from_bipartite_igraph(bipartite_igraph)
     },
     
     #
@@ -160,19 +192,28 @@ SaomNkRSienaBiEnv_base <- R6Class(
       self$social_igraph <- self$project_social_space(bipartite_igraph)
       self$search_igraph <- self$project_search_space(bipartite_igraph)
       #
-      self$bipartite_matrix  <- igraph::as_biadjacency_matrix(bipartite_igraph,attr = 'weight', sparse = F)
+      self$bipartite_matrix <- igraph::as_biadjacency_matrix(bipartite_igraph,attr = 'weight', sparse = F)
       self$social_matrix <- igraph::as_adjacency_matrix(self$social_igraph, attr = 'weight', sparse = F)
       self$search_matrix <- igraph::as_adjacency_matrix(self$search_igraph, attr = 'weight', sparse = F)
     },
     
-    # Generate a random bipartite network object
-    random_bipartite_igraph = function(rand_seed = 123) {
+    # Generate a random bipartite network matrix
+    random_bipartite_matrix = function(rand_seed = 123) {
       set.seed(rand_seed)  # For reproducibility
       probs <- c( 1 - self$BI_PROB, self$BI_PROB )
       bipartite_matrix <- matrix(sample(0:1, self$M * self$N, replace = TRUE, prob = probs ),
                                  nrow = self$M, ncol = self$N)
+      return(bipartite_matrix)
+      # # bipartite_net <- network(bipartite_matrix, bipartite = TRUE, directed = TRUE)
+      # bipartite_igraph <- igraph::graph_from_biadjacency_matrix(bipartite_matrix, directed = F, mode = 'all')
+      # return(bipartite_igraph)
+    },
+    
+    # Generate a random bipartite network object
+    random_bipartite_igraph = function(rand_seed = 123) {
+      bipartite_matrix <- self$random_bipartite_matrix(rand_seed)
       # bipartite_net <- network(bipartite_matrix, bipartite = TRUE, directed = TRUE)
-      bipartite_igraph <- igraph::graph_from_biadjacency_matrix(bipartite_matrix, directed = TRUE, mode = 'all')
+      bipartite_igraph <- igraph::graph_from_biadjacency_matrix(bipartite_matrix, directed = F, mode = 'all')
       return(bipartite_igraph)
     },
     
@@ -210,7 +251,9 @@ SaomNkRSienaBiEnv_base <- R6Class(
     
     # Define the bipartite (2-mode) network matrix self$toggle function:
     toggleBiMat = function(m,i,j){
-      m[i,j] <-  ( 1 - m[i,j] )
+      if ( i >= 1 && i <= dim(m)[1] && j >= 1 && j <= dim(m)[2] ) {
+        m[i,j] <-   1 - m[i,j] 
+      }
       return(m)
     },
     
@@ -387,7 +430,7 @@ SaomNkRSienaBiEnv_base <- R6Class(
       effnames <- sapply(efflist, function(x) x$effect, simplify = T)
       effparams <- sapply(efflist, function(x) x$parameter, simplify = T)
       #
-      mat <- matrix(rep(0, m1$M * neffs ), nrow=self$M, ncol=neffs )
+      mat <- matrix(rep(0, self$M * neffs ), nrow=self$M, ncol=neffs )
       colnames(mat) <- effnames
       rownames(mat) <- 1:self$M
       #  
