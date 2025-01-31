@@ -78,8 +78,141 @@ SaomNkRSienaBiEnv <- R6Class(
       self$degree_history_K_E[[self$ITERATION]] <- degree( self$get_component_igraph() )
     },
     
+    
+    
+    
     ##
     get_rsiena_data_from_structure_model = function(structure_model) {
+      ACTORS     <- sienaNodeSet(self$M, nodeSetName="ACTORS")
+      COMPONENTS <- sienaNodeSet(self$N, nodeSetName="COMPONENTS")
+      # strat_mat_varCovar <- varCovar(strat_eff$x, nodeSet = 'ACTORS')
+      if (! 'coCovars' %in% names(structure_model$dv_bipartite) ) {
+        rsiena_data <- sienaDataCreate(list(self$bipartite_rsienaDV), nodeSets = list(ACTORS, COMPONENTS))
+        return(rsiena_data)
+      }
+      dv_name <- structure_model$dv_bipartite$name
+      
+      
+      structeffs <- sapply(structure_model$dv_bipartite$effects, function(x)x$parameter)
+      names(structeffs) <- sapply(structure_model$dv_bipartite$effects, function(x)x$effect)
+      
+      
+      coCovars     <- sapply(structure_model$dv_bipartite$coCovars, function(x)x$effect)
+      varCovars     <- sapply(structure_model$dv_bipartite$varCovars, function(x)x$effect)
+      coDyadCovars  <- sapply(structure_model$dv_bipartite$coDyadCovars, function(x)x$effect)
+      varDyadCovars <- sapply(structure_model$dv_bipartite$varDyadCovars, function(x)x$effect)
+
+      coCovarTypes     <- sapply(structure_model$dv_bipartite$coCovars, function(x)x$interaction1)
+      varCovarTypes     <- sapply(structure_model$dv_bipartite$varCovars, function(x)x$interaction1)
+      coDyadCovarTypes  <- sapply(structure_model$dv_bipartite$coDyadCovars, function(x)x$interaction1)
+      varDyadCovarTypes <- sapply(structure_model$dv_bipartite$varDyadCovars, function(x)x$interaction1)
+
+      component_coCovar_ids     <- grep('self\\$component.+_coCovar', coCovarTypes) ## ex: "self$component_1_coCovar"
+      component_varCovar_ids    <- grep('self\\$component.+_varCovar', varCovarTypes) ## ex: "self$component_1_coCovar"
+      component_coDyadCovar_ids  <- grep('self\\$component.+_coDyadCovar', coDyadCovarTypes) ## ex: "self$component_1_coCovar"
+      component_varDyadCovar_ids <- grep('self\\$component.+_varDyadCovar', varDyadCovarTypes) ## ex: "self$component_1_coCovar"
+
+      strat_coCovar_ids     <- grep('self\\$strat.+_coCovar', coCovarTypes) ## ex: "self$component_1_coCovar"
+      strat_varCovar_ids    <- grep('self\\$strat.+_varCovar', varCovarTypes) ## ex: "self$component_1_coCovar"
+      strat_coDyadCovar_ids  <- grep('self\\$strat.+_coDyadCovar', coDyadCovarTypes) ## ex: "self$component_1_coCovar"
+      strat_varDyadCovar_ids <- grep('self\\$strat.+_varDyadCovar', varDyadCovarTypes) ## ex: "self$component_1_coCovar"
+      # stratDV_ids     <- grep('self\\$strat_\\d{1,2}_coCovar', covDvTypes ) ## ex: "self$strat_1_coCovar"
+
+      ncompo_coCovar     <- length( component_coCovar_ids )
+      ncompo_varCovar    <- length( component_varCovar_ids )
+      ncompo_coDyadCovar  <- length( component_coDyadCovar_ids )
+      ncompo_varDyadCovar <- length( component_varDyadCovar_ids )
+
+      nstrat_coCovar     <- length( strat_coCovar_ids )
+      nstrat_varCovar    <- length( strat_varCovar_ids )
+      nstrat_coDyadCovar  <- length( strat_coDyadCovar_ids )
+      nstrat_varDyadCovar <- length( strat_varDyadCovar_ids )
+      
+      
+      ## input list of variable for RSiena model
+      input_varlist <- list(`self$bipartite_rsienaDV`=self$bipartite_rsienaDV)
+      ##-------------------------------------------------------------
+      ## COMPONENTS ##
+      if (ncompo_coCovar) {
+        for (i in 1:ncompo_coCovar) {
+          property <- sprintf('component_%s_coCovar', i)
+          eff <- structure_model$dv_bipartite$coCovars[[ component_coCovar_ids[i] ]]
+          self[[property]] <- coCovar(eff$x, nodeSet = c('COMPONENTS'))
+          input_varlist[[sprintf('self$%s',property)]] <-  self[[property]]
+        }
+      }
+      if (ncompo_varCovar) {
+        for (i in 1:ncompo_varCovar) {
+          property <- sprintf('component_%s_coCovar', i)
+          eff <- structure_model$dv_bipartite$varCovars[[ component_varCovar_ids[i] ]]
+          self[[property]] <- varCovar(eff$x, nodeSet = c('COMPONENTS'))
+          input_varlist[[sprintf('self$%s',property)]] <-  self[[property]]
+        }
+      }
+      if (ncompo_coDyadCovar) {
+        for (i in 1:ncompo_coDyadCovar) {
+          property <- sprintf('component_%s_coDyadCovar', i)
+          eff <- structure_model$dv_bipartite$coDyadCovar[[ component_coCovar_ids[i] ]]
+          self[[property]] <- coDyadCovar(eff$x, nodeSet = c('COMPONENTS','COMPONENTS'))
+          input_varlist[[sprintf('self$%s',property)]] <-  self[[property]]
+        }
+      }
+      if (ncompo_varDyadCovar) {
+        for (i in 1:ncompo_varDyadCovar) {
+          property <- sprintf('component_%s_varDyadCovar', i)
+          eff <- structure_model$dv_bipartite$varDyadCovar[[ component_varDyadCovar_ids[i] ]]
+          self[[property]] <- varDyadCovar(eff$x, nodeSet = c('COMPONENTS','COMPONENTS'))
+          input_varlist[[sprintf('self$%s',property)]] <-  self[[property]]
+        }
+      }
+      ##-------------------------------------------------------------
+      ## STRATEGIES ##
+      if (nstrat_coCovar) {
+        for (i in 1:nstrat_coCovar) {
+          property <- sprintf('strat_%s_coCovar', i)
+          eff <- structure_model$dv_bipartite$coCovars[[ strat_coCovar_ids[i] ]]
+          self[[property]] <- coCovar(eff$x, nodeSet = c('ACTORS'))
+          input_varlist[[sprintf('self$%s',property)]] <-  self[[property]]
+        }
+      }
+      if (nstrat_varCovar) {
+        for (i in 1:nstrat_varCovar) {
+          property <- sprintf('strat_%s_coCovar', i)
+          eff <- structure_model$dv_bipartite$varCovars[[ strat_varCovar_ids[i] ]]
+          self[[property]] <- varCovar(eff$x, nodeSet = c('ACTORS'))
+          input_varlist[[sprintf('self$%s',property)]] <-  self[[property]]
+        }
+      }
+      if (nstrat_coDyadCovar) {
+        for (i in 1:nstrat_coDyadCovar) {
+          property <- sprintf('strat_%s_coDyadCovar', i)
+          eff <- structure_model$dv_bipartite$coDyadCovar[[ strat_coDyadCovar_ids[i] ]]
+          self[[property]] <- coDyadCovar(eff$x, nodeSet = c('ACTORS','ACTORS'))
+          input_varlist[[sprintf('self$%s',property)]] <-  self[[property]]
+        }
+      }
+      if (nstrat_varDyadCovar) {
+        for (i in 1:nstrat_varDyadCovar) {
+          property <- sprintf('strat_%s_varDyadCovar', i)
+          eff <- structure_model$dv_bipartite$varDyadCovar[[ strat_varDyadCovar_ids[i] ]]
+          self[[property]] <- varDyadCovar(eff$x, nodeSet = c('ACTORS','ACTORS'))
+          input_varlist[[sprintf('self$%s',property)]] <-  self[[property]]
+        }
+      }
+      ##-------------------------------------------------------------
+      #
+      sienaDataCreate_args <- c( list(nodeSets=list(ACTORS, COMPONENTS)), input_varlist ) 
+      rsiena_data <- do.call(sienaDataCreate, sienaDataCreate_args)
+      
+      
+      return(rsiena_data)
+    },
+    
+    
+    
+    
+    ##
+    get_rsiena_data_from_structure_model_v0 = function(structure_model) {
       ACTORS     <- sienaNodeSet(self$M, nodeSetName="ACTORS")
       COMPONENTS <- sienaNodeSet(self$N, nodeSetName="COMPONENTS")
       # strat_mat_varCovar <- varCovar(strat_eff$x, nodeSet = 'ACTORS')
@@ -226,9 +359,9 @@ SaomNkRSienaBiEnv <- R6Class(
       ## @see https://www.stats.ox.ac.uk/~snijders/siena/NetworkSimulation.R
       bipartite_matrix1 <- bipartite_matrix
       bipartite_matrix2 <- bipartite_matrix
-      .i <- sample(1:self$M, 1)
-      .j <- sample(1:self$N, 1)
-      bipartite_matrix2 <-  self$toggleBiMat(bipartite_matrix2, .i, .j )
+      # .i <- sample(1:self$M, 1)
+      # .j <- sample(1:self$N, 1)
+      # bipartite_matrix2 <-  self$toggleBiMat(bipartite_matrix2, .i, .j )
       ##
       social_matrix1 <- bipartite_matrix1 %*% t(bipartite_matrix1)
       search_matrix1 <- t(bipartite_matrix1) %*% bipartite_matrix1
@@ -422,80 +555,122 @@ SaomNkRSienaBiEnv <- R6Class(
           ##**TODO** Implement variable covariates(?)
         }
         
+        for (j in 1:length(dv$coDyadCovars)) {
+          cat(sprintf('\n coDyadCovars i=%s, j=%s\n', i, j))
+          
+          eff <- dv$coDyadCovars[[ j ]]
+          
+          print(eff)
+          # print(eff)
+          # stop('DEBUG')
+          
+          self$include_rsiena_effect_from_eff_list(eff)
+        }
+        
+        for (j in 1:length(dv$varDyadCovars)) {
+          ##**TODO** Implement variable covariates(?)
+        }
+        
       }
       
     },
   
     
+    
+    
+    # #######
+    # bipartite_matrix1 <- self$bipartite_matrix
+    # bipartite_matrix2 <- self$bipartite_matrix
+    # #######
+    # # cat('\n\nDEBUG: called init_rsiena_model_from_structure_model_bipartite_matrix()\n\n')
+    # #
+    # ACTORS     <- sienaNodeSet(self$M, nodeSetName="ACTORS")
+    # COMPONENTS <- sienaNodeSet(self$N, nodeSetName="COMPONENTS")
+    # #
+    # self$config_structure_model <- structure_model
+    # structure_model_dvs <- names(structure_model)
+    # #
+    # # ## Simulation baseline nets should not be same; make one small change (self$toggle one dyad)
+    # # ## @see https://www.stats.ox.ac.uk/~snijders/siena/NetworkSimulation.R
+    # # #
+    # # if(identical(bipartite_matrix1, bipartite_matrix2)) {
+    # #   .i <- sample(1:self$M, 1)
+    # #   .j <- sample(1:self$N, 1)
+    # #   bipartite_matrix2 <-  self$toggleBiMat(bipartite_matrix2, .i, .j )
+    # # }
+    # ##
+    # social_matrix1 <- bipartite_matrix1 %*% t(bipartite_matrix1)
+    # search_matrix1 <- t(bipartite_matrix1) %*% bipartite_matrix1
+    # ##
+    # social_matrix2 <- bipartite_matrix2 %*% t(bipartite_matrix2)
+    # search_matrix2 <- t(bipartite_matrix2) %*% bipartite_matrix2
+    # ## init networks to duplicate for the init arrays (two network waves)
+    # array_bi_net <- array(c(bipartite_matrix1, bipartite_matrix2), dim=c(self$M, self$N, 2) )
+    # array_social <- array(c(social_matrix1, social_matrix2), dim=c(self$M, self$M, 2) )
+    # array_search <- array(c(search_matrix1, search_matrix2), dim=c(self$N, self$N, 2) )
+    # ## Drop information above binary ties for RSiena DVs
+    # array_bi_net[ array_bi_net > 1 ] <- 1
+    # array_social[ array_social > 1 ] <- 1
+    # array_search[ array_search > 1 ] <- 1
+    # if ('dv_social' %in% structure_model_dvs ) {
+    #   self$social_rsienaDV <- sienaDependent(array_social, type='oneMode', nodeSet = 'ACTORS', allowOnly = F)
+    # }
+    # if ('dv_search' %in% structure_model_dvs) {
+    #   self$search_rsienaDV <- sienaDependent(array_search, type='oneMode', nodeSet = 'COMPONENTS', allowOnly = F)
+    # }
+    # if ('dv_bipartite' %in% structure_model_dvs) {
+    #   self$bipartite_rsienaDV <- sienaDependent(array_bi_net, type='bipartite', nodeSet =c('ACTORS', 'COMPONENTS'), allowOnly = F)
+    # }
+    
     ##
     preview_effects = function(structure_model, filter=TRUE) {
-      #######
-      bipartite_matrix1 <- self$bipartite_matrix
-      bipartite_matrix2 <- self$bipartite_matrix
-      #######
-      # cat('\n\nDEBUG: called init_rsiena_model_from_structure_model_bipartite_matrix()\n\n')
-      #
-      ACTORS     <- sienaNodeSet(self$M, nodeSetName="ACTORS")
-      COMPONENTS <- sienaNodeSet(self$N, nodeSetName="COMPONENTS")
       #
       self$config_structure_model <- structure_model
-      structure_model_dvs <- names(structure_model)
-      #
-      # ## Simulation baseline nets should not be same; make one small change (self$toggle one dyad)
-      # ## @see https://www.stats.ox.ac.uk/~snijders/siena/NetworkSimulation.R
-      # #
-      # if(identical(bipartite_matrix1, bipartite_matrix2)) {
-      #   .i <- sample(1:self$M, 1)
-      #   .j <- sample(1:self$N, 1)
-      #   bipartite_matrix2 <-  self$toggleBiMat(bipartite_matrix2, .i, .j )
-      # }
-      ##
-      social_matrix1 <- bipartite_matrix1 %*% t(bipartite_matrix1)
-      search_matrix1 <- t(bipartite_matrix1) %*% bipartite_matrix1
-      ##
-      social_matrix2 <- bipartite_matrix2 %*% t(bipartite_matrix2)
-      search_matrix2 <- t(bipartite_matrix2) %*% bipartite_matrix2
-      ## init networks to duplicate for the init arrays (two network waves)
-      array_bi_net <- array(c(bipartite_matrix1, bipartite_matrix2), dim=c(self$M, self$N, 2) )
-      array_social <- array(c(social_matrix1, social_matrix2), dim=c(self$M, self$M, 2) )
-      array_search <- array(c(search_matrix1, search_matrix2), dim=c(self$N, self$N, 2) )
-      ## Drop information above binary ties for RSiena DVs
-      array_bi_net[ array_bi_net > 1 ] <- 1
-      array_social[ array_social > 1 ] <- 1
-      array_search[ array_search > 1 ] <- 1
-      if ('dv_social' %in% structure_model_dvs ) {
-        self$social_rsienaDV <- sienaDependent(array_social, type='oneMode', nodeSet = 'ACTORS', allowOnly = F)
-      }
-      if ('dv_search' %in% structure_model_dvs) {
-        self$search_rsienaDV <- sienaDependent(array_search, type='oneMode', nodeSet = 'COMPONENTS', allowOnly = F)
-      }
-      if ('dv_bipartite' %in% structure_model_dvs) {
-        self$bipartite_rsienaDV <- sienaDependent(array_bi_net, type='bipartite', nodeSet =c('ACTORS', 'COMPONENTS'), allowOnly = F)
-      }
-      ##---------------------------------------------
-      self$rsiena_data <- self$get_rsiena_data_from_structure_model(structure_model)
       
-      ##  INIT effects list in simulation model (in RSiena model)
+      ##--------- I. SET BIPARTITE NETWORK DV ARRAY IF NULL -----------------
+      # rsiena_model$sims[[sim_id]][[wave_id]][[bi_env_dv_id]] 
+      ## Set up bipartite matrix RSiena dependent variable 
+      if(is.null(self$bipartite_matrix)) 
+          stop('bipartite_matrix is not set and no array_bi_net provided.')
+      array_bi_net <- array(c(self$bipartite_matrix, self$bipartite_matrix), 
+                            dim = c(self$M, self$N, 2))
+
+      # 
+      self$bipartite_rsienaDV <- sienaDependent(array_bi_net, 
+                                                type='bipartite',
+                                                nodeSet =c('ACTORS', 'COMPONENTS'), 
+                                                allowOnly = F)
+      
+      ##----------- II. SET RSIENA DATA AND EFFECTS ---------------------------
+      ##  1. RSiena data object
+      self$rsiena_data <- self$get_rsiena_data_from_structure_model(structure_model)
+      ##  2. Init effects
       self$rsiena_effects <- getEffects(self$rsiena_data)
       
-      eff_filename <- file.path(getwd(), 'self$rsiena_effects.html')
+      eff_filename <- file.path(self$DIR_OUTPUT, '_rsiena_effects_doc_')
       effectsDocumentation(self$rsiena_effects, type = 'html', display = F, filename = eff_filename)
       
+      # ##--2. NETWORK: STRUCTURE EVOLUTION (structure_Model)-----
+      # ##  2.1. Add effects from model objective function list
+      # self$add_rsiena_effects(structure_model)
+      
       # Parse the HTML
-      html <- read_html(eff_filename)
+      html <- read_html(sprintf('%s.html', eff_filename))
+      
+      # html <- read_html('C:\\Users\\sdr8y\\OneDrive - University of Missouri\\Research\\Search_networks\\SaoMNK\\R\\_rsiena_effects_doc_.html')
       
       # Extract tables (returns a list of data.frames)
       efftab_list <- html %>% html_table(fill = TRUE)
-      efftab <- efftab_list[[1]]
+      efftab <- efftab_list[[1]] # effect table is first in list
       
       if ( ! filter )
         return(efftab)
       
       efftable_dt <- datatable(
-        efftab_list[[1]],     # effect table is first in list
+        efftab,               
         filter = "top",       # Adds filter boxes at the top
         options = list(
-          pageLength = 100,    # Number of rows per page
+          pageLength = 10,   # Number of rows per page
           autoWidth = TRUE,   # Auto-adjust column width
           dom = 'lfrtip',     # Layout controls (search box, filters, etc.)
           scrollX = TRUE      # Horizontal scrolling if needed
@@ -509,16 +684,16 @@ SaomNkRSienaBiEnv <- R6Class(
     
     
     ##**TODO: check**
-    search_rsiena = function(structure_model, 
-                             get_eff_doc=FALSE,
-                             rsiena_phase2_nsub=1,
-                             rsiena_n2start_scale=1, 
-                             iterations=1000, 
-                             run_seed=123, 
-                             digits=3,
-                             plot_save=FALSE,
-                             return_plot=FALSE
-                             ) {
+    search_rsiena_v1 = function(structure_model, 
+                                 get_eff_doc=FALSE,
+                                 rsiena_phase2_nsub=1,
+                                 rsiena_n2start_scale=1, 
+                                 iterations=1000, 
+                                 run_seed=123, 
+                                 digits=3,
+                                 plot_save=FALSE,
+                                 return_plot=FALSE
+                                 ) {
       if(is.null(self$bipartite_matrix))
         stop('bipartite_matrix is not set.')
 
@@ -538,16 +713,16 @@ SaomNkRSienaBiEnv <- R6Class(
       ##  INIT effects list in simulation model (in RSiena model)
       self$rsiena_effects <- getEffects(self$rsiena_data)
       
-      # Effects Documentation
-      if(get_eff_doc)
-        effectsDocumentation(self$rsiena_effects, type = 'html', display = T)
-      ##-----------------------------
-      
       # stop('DEBUG XXXXXXXXXXXXX')
       ##--2. NETWORK: STRUCTURE EVOLUTION (structure_Model)-----
       ##  2.1. Add effects from model objective function list
       self$add_rsiena_effects(structure_model)
     
+      # Effects Documentation
+      if(get_eff_doc)
+        effectsDocumentation(self$rsiena_effects, type = 'html', display = T)
+      ##-----------------------------
+      
       
       ## set fix to FALSE for all parameters to be simulated
       self$rsiena_effects$fix <- rep(FALSE, length(self$rsiena_effects$fix) )
@@ -605,49 +780,169 @@ SaomNkRSienaBiEnv <- R6Class(
     },
     
     
+    
+    
+    
+    # 
+    # 
+    # ## 2.b. Component Payoffs vector
+    # set.seed(12345)
+    # component_payoffs <-  runif(environ_params$N, min = 0, max = 1)
+    # ## 2. Strategies sets the objective function as a linear combination of network stats across DVs
+    # #
+    # actor_strats_list <- lapply(strategies, function(strat) rep(strat,  environ_params$M/length(strat)) )
+    # 
+    #
+    # structure_model <- list(
+    #   dv_bipartite = list(
+    #     name = 'self$bipartite_rsienaDV',
+    #     effects = list( ##**STRUCTURAL EFFECTS -- dyadic/network endogeneity sources**
+    #       list(effect='density', parameter= 0, fix=T, dv_name=DV_NAME), ##interaction1 = NULL
+    #       list(effect='inPop',   parameter= 0, fix=T, dv_name=DV_NAME), #interaction1 = NUL
+    #       list(effect='outAct',  parameter= 0, fix=T, dv_name=DV_NAME)
+    #     ),
+    #     ## COVARIATE EFFECTS
+    #     coCovars = list( 
+    #       ##** COMPONENTS : MONADIC CONSTANT COVARIATE EFFECTS **##
+    #       list(effect='altX',   parameter= 1, dv_name=DV_NAME, fix=T,
+    #            interaction1='self$component_1_coCovar', x = component_payoffs 
+    #       ),
+    #       ##** STRATEGIES : MONADIC CONSTANT COVARIATE EFFECTS **##
+    #       list(effect='egoX',   parameter= .1,  dv_name=DV_NAME, fix=T,
+    #            interaction1='self$strat_1_coCovar',   x = actor_strats_list[[1]] 
+    #       ), #interaction1 = NULL
+    #       list(effect='inPopX', parameter= .5,  dv_name=DV_NAME, fix=T,
+    #            interaction1='self$strat_2_coCovar',  x = actor_strats_list[[2]] 
+    #       )
+    #     ),
+    #     varCovars = list() ##**MONADIC TIME-VARYING COVARIATE EFFECTS -- DYNAMIC STRATEGY PROGRAMS**
+    #   )
+    # )
+    
+    #
+    
+    
+    get_input_from_structure_model = function(structure_model) {
+      # actor_strats <- self$get_actor_strategies()
+      if( ! 'dv_bipartite' %in% names(structure_model) ) 
+        stop('structure_model does not contain dv_bipartite.')
+      #
+      structeffs <- structure_model$dv_bipartite$effects %>% ldply(as.data.frame) %>% mutate(interaction1=NA, interaction2=NA) # use previous effects
+      coCovars   <- structure_model$dv_bipartite$coCovars %>% ldply(function(x) {
+        as.data.frame(x[! names(x)%in%c('x')])
+      }) %>% mutate(interaction2=NA)
+      coDyadCovars   <- structure_model$dv_bipartite$coDyadCovars %>% ldply(function(x) {
+        as.data.frame(x[! names(x)%in%c('x')])
+      }) %>% mutate(interaction2=NA) 
+      # varCovars   <- structure_model$dv_bipartite$varCovars %>% ldply(function(x) {
+      #   as.data.frame(x[! names(x)%in%c('x')])
+      # })  %>% mutate(interaction2=NA) 
+      # varDyadCovars   <- structure_model$dv_bipartite$varDyadCovars %>% ldply(function(x) {
+      #   as.data.frame(x[! names(x)%in%c('x')])
+      # }) %>% mutate(interaction2=NA) 
+      interactions   <- structure_model$dv_bipartite$interactions %>% ldply(function(x) {
+        as.data.frame( x )
+      }) 
+      #
+      effects <- structeffs %>%  
+        bind_rows(coCovars) %>%  
+        bind_rows(coDyadCovars) %>%
+        bind_rows(interactions) ## %>%
+        # bind_rows(varCovars) %>%
+        # bind_rows(varDyadCovars) %>%
+      #
+      return(effects)
+    },
+    
+    
+    ############################################################################
     ##**TODO: check**
-    search_rsiena_shocks = function(array_bi_net,
-                                    structure_model, 
-                                    theta_matrix,
-                                    get_eff_doc=FALSE,
-                                    iterations=1000, 
-                                    run_seed=123, 
-                                    plot_save=FALSE,
-                                    return_plot=FALSE,
-                                    digits=3
+    search_rsiena = function(structure_model, 
+                             array_bi_net=NULL, ## starting matrices for the simulation
+                             theta_matrix=NULL, ## variable theta matrix replaces parameter values in structure_model
+                             iterations=1000,   ## replaced by nrow(theta_matrix) if theta_matrix is not null
+                             run_seed=123, 
+                             process_chain=TRUE,
+                             get_eff_doc=FALSE,
+                             plot_save=FALSE,
+                             return_plot=FALSE,
+                             verbose=TRUE,
+                             digits=3
     ) {
-      if(is.null(self$bipartite_matrix))
-        stop('bipartite_matrix is not set.')
       
       self$config_structure_model <- structure_model
-
-      ##---------------------------------------------
-      # rsiena_model$sims[[sim_id]][[wave_id]][[bi_env_dv_id]] 
       
+      input_effs <- self$get_input_from_structure_model(structure_model)
+
+      ##--------- I. SET BIPARTITE NETWORK DV ARRAY IF NULL -----------------
+      # rsiena_model$sims[[sim_id]][[wave_id]][[bi_env_dv_id]] 
+      ## Set up bipartite matrix RSiena dependent variable 
+      if (any(is.null(array_bi_net))) 
+      {
+        if(is.null(self$bipartite_matrix)) 
+          stop('bipartite_matrix is not set and no array_bi_net provided.')
+        #
+        array_bi_net <- array(c(self$bipartite_matrix, self$bipartite_matrix), 
+                              dim = c(self$M, self$N, 2))
+      }
+      # 
       self$bipartite_rsienaDV <- sienaDependent(array_bi_net, 
                                                 type='bipartite',
                                                 nodeSet =c('ACTORS', 'COMPONENTS'), 
                                                 allowOnly = F)
       
-      ##---------------------------------------------
-      ##**self$rsiena_data property** get rsiena_data 
+      ##----------- II. SET RSIENA DATA AND EFFECTS ---------------------------
+      ##  1. RSiena data object
       self$rsiena_data <- self$get_rsiena_data_from_structure_model(structure_model)
-      print('self$rsiena_data : ')
-      print(self$rsiena_data)
-      
+      if(verbose) {
+        cat('\n\nself$rsiena_data : \n\n')
+        print(self$rsiena_data)
+      }
       ##  2. Init effects
       self$rsiena_effects <- getEffects(self$rsiena_data)
       ## UPDATE PARAMETERS TO FIXED=FALSE so we can estimate them
       ##  3. Add effects from model objective function list
       self$add_rsiena_effects(structure_model)
-      
       ## set fix to FALSE for all parameters to be simulated
-      self$rsiena_effects$fix <- rep(FALSE, length(self$rsiena_effects$fix) )
-      # self$rsiena_model$theta
+      # self$rsiena_effects$fix <- rep(FALSE, length(self$rsiena_effects$fix) )
       
+      
+      ##---------- III. SET THETA MATRIX IF NULL  -----------------------------
+      if (any(is.null(theta_matrix))) 
+      {
+        effs <- as.data.frame(self$rsiena_effects[self$rsiena_effects$include, ])
+        ## add short name for convenience as effect name
+        effs$effect <- effs$shortName
+        ## EXCLUDE RATES PARAMETERS NOT INCLUDED IN INPUTE MODEL
+        effs <- effs[ effs$effect %in% input_effs$effect , ]
+        # effs <- self$get_rsiena_effects_df_from_structure_model(structure_model)
+        # names_theta_in <- effs$effectName[effs$include][params_norates]
+        theta_in        <- effs$parm
+        names(theta_in) <- effs$effect
+        # interaction1s   <- effs$interaction1
+        # names(interaction1s) <- effs$effect
+        nthetas <- length(theta_in)
+        ## Number of decision chain steps to simulate
+        theta_matrix <- matrix(NA, nrow = iterations, ncol = nthetas)
+        for (j in 1:length(theta_in)) {
+          print(names(theta_in)[j])
+          theta_matrix[, j] <- rep(theta_in[j], iterations)
+        }  
+        colnames(theta_matrix) <- names(theta_in)
+        #print(theta_matrix)
+      }
+      #
+      if(verbose) {
+        cat('\n\n theta_matrix : \n\n')
+        print(theta_matrix)
+      }
+      
+      
+      
+      ##---------- IV. RUN SIMULATION  -----------------------------
       ##  4. RSiena Algorithm
       self$rsiena_run_seed <- run_seed
-      self$rsiena_algorithm <- sienaAlgorithmCreate(projname=sprintf('%s_%s',self$SIM_NAME,self$TIMESTAMP),
+      self$rsiena_algorithm <- sienaAlgorithmCreate(projname=file.path(self$DIR_OUTPUT, sprintf('%s_%s',self$SIM_NAME,self$TIMESTAMP)),
                                                     simOnly = T,
                                                     # nsub = rsiena_phase2_nsub * 1,
                                                     nsub = 0,
@@ -666,30 +961,166 @@ SaomNkRSienaBiEnv <- R6Class(
                                    returnDataFrame = TRUE, ##**TODO** CHECK
                                    returnLoglik = TRUE   ##**TODO** CHECK
       )   # returnChains = returnChains
-      
-      
+      # 6. Summary of fitted model
       mod_summary <- summary( self$rsiena_model )
-      
-      if(!is.null(mod_summary))
+      if(verbose &  !is.null(mod_summary))
         print(mod_summary)
-      # plot(self$rsiena_model)
       
       
-      print(screenreg(list(self$rsiena_model), single.row = T, digits = digits))
+      ##----------- IV. POST-PROCESSING OF SIMULATION RESULTS  ------------------
+      if(process_chain)
+      {
+        ## PRocess the decision ministep chain 
+        ##  (C++ output to R data.frame: reindexing C++'s 0-index Actor IDs to R's 1-index)
+        self$search_rsiena_process_ministep_chain(verbose)
+        ## Compute actor and component statistics 
+        self$search_rsiena_process_stats()  
+        ##
+        new_bi_env_matrix <- self$bi_env_arr[,, dim(self$bi_env_arr)[3] ]
+        self$set_system_from_bipartite_matrix( new_bi_env_matrix )
+      }
       
-      ## update simulation object environment from RSiena simulation model
-      new_bi_env_igraph <- self$get_bipartite_igraph_from_rsiena_model()
-      #
-      self$set_system_from_bipartite_igraph( new_bi_env_igraph )
-      #
-      # sim_iterations <- self$rsiena_model$n3 ##**TODO** CHECK
-      #
-      # self$plot_bipartite_system_from_mat(self$bipartite_matrix, iterations, plot_save = T)
-      # self$plot_bipartite_system_from_mat(self$bipartite_matrix,
-      #                                     nrow(theta_matrix), 
-      #                                     plot_save = FALSE, 
-      #                                     return_plot=TRUE)
+      ## Show RSiena model screenreg after chain stats (show users what they expect to see at bottom)
+      if(verbose)
+        print(screenreg(list(self$rsiena_model), single.row = T, digits = digits))
+      
     },
+    ############################################################################
+    
+    
+    ##
+    ## The output is a 3D array with:
+    ##  The first dimension NK[a, :, :] is the number of an iteration (from 0 to n_landscapes)
+    ##  The second dimension NK[:, b, :] is the location on a given landscape, where b ranges from 0 to 2^N
+    ##  The third dimension NK[:, :, c] captures:
+    ##   - the first N columns are for the combinations of N decision variables DV
+    ##   - the second N columns are for the contribution values of each DV
+    ##   - the next value (index=2*N) is for the total fit (avg of N contributions)
+    ##   - the last one (index=2*N+1 is to find out whether it is the local peak (0 or 1)
+    compute_fitness_landscape = function(n_landscapes=30, 
+                                         component_coCovar=1, ## if not exists, then just use random
+                                         normalize_int_mat=TRUE,
+                                         project_int_mat=FALSE,
+                                         component_value_sd=0.1,
+                                         verbose=TRUE) {
+      # SYSTEM INPUT
+      N <- self$N
+      # i <- n_landscapes
+      
+      has_coDyadCovar <- !is.null(self$component_1_coDyadCovar) & all(dim(self$component_1_coDyadCovar) == self$N)
+      
+      ##**TODO - Use projected search matrix or exogenous covariate matrix? **
+      ## use projected matrix
+      if (project_int_mat || !has_coDyadCovar) {
+        Int_matrix <- self$search_matrix
+      } else if ( has_coDyadCovar ) {
+        Int_matrix <- as.matrix( self$component_1_coDyadCovar )
+      } else {
+        stop('project_int_mat=FALSE but no component_x_coDyadCovar variable included in RSiena data.')
+      }
+      #
+      if (normalize_int_mat) {
+        Int_matrix <- sapply(1:nrow(Int_matrix), function(i){
+          if(max(Int_matrix[i, ])==0) 
+            return(Int_matrix[i, ])
+          return( Int_matrix[i, ] / max(Int_matrix) )
+        })
+      }
+      
+      # K <- self$K_C_df %>% 
+      #   filter(chain_step_id==max(chain_step_id)) %>% 
+      #   summarize(mean=mean(value - 1)) %>%
+      #   pull(mean)
+      
+      #________internal_functions________________
+      powerkey <- function(N) {
+        # Compute the powers of 2 for index location
+        return(2^((N-1):0))
+      }
+      nkland <- function(N, component_cov=NULL, component_value_sd=0.1) {
+        ## Fully random landscape
+        if(!self$exists(component_cov)) {
+          runif_mat <- matrix(runif(2^N * N), nrow=2^N, ncol=N)
+          return(runif_mat)
+        }
+        ##**Use component covariates in fitness computation**
+        vals <- self[[sprintf('component_%s_coCovar', component_coCovar)]]
+        ## Gaussian noise centered at the component value ~ U(0,1), with sd=component_value_sd
+        rnorm_mat <- sapply(1:N, function(i) rnorm(n = 2^N, mean = vals[i], sd=component_value_sd))
+        return( rnorm_mat )
+      }
+      calc_fit <- function(N, NK_land, inter_m, Current_position, Power_key) {
+        # Compute fitness contributions for each decision variable
+        Fit_vector <- numeric(N)
+        for (ad1 in 1:N) {
+          Fit_vector[ad1] <- NK_land[sum(Current_position * inter_m[ad1, ] * Power_key) + 1, ad1]
+        }
+        return(Fit_vector)
+      }
+      comb_and_values <- function(N, NK_land, Power_key, inter_m) {
+        # Compute fitness for all combinations
+        Comb_and_value <- matrix(0, nrow=2^N, ncol=2*N+2)
+        combinations <- expand.grid(replicate(N, 0:1, simplify = FALSE))
+        
+        for (c1 in 1:(2^N)) {
+          Combination1 <- as.integer(combinations[c1,])
+          fit_1 <- calc_fit(N, NK_land, inter_m, Combination1, Power_key)
+          
+          Comb_and_value[c1, 1:N] <- Combination1
+          Comb_and_value[c1, (N+1):(2*N)] <- fit_1
+          Comb_and_value[c1, (2*N+1)] <- mean(fit_1)
+        }
+        
+        # Check for local peaks
+        for (c3 in 1:(2^N)) {
+          loc_p <- 1  # Assume it is a peak
+          for (c4 in 1:N) {
+            new_comb <- Comb_and_value[c3, 1:N]
+            new_comb[c4] <- abs(new_comb[c4] - 1)
+            index <- sum(new_comb * Power_key) + 1
+            if (Comb_and_value[c3, 2*N+1] < Comb_and_value[index, 2*N+1]) {
+              loc_p <- 0  # Not a peak
+            }
+          }
+          Comb_and_value[c3, 2*N+2] <- loc_p
+        }
+        
+        return(Comb_and_value)
+      }
+      ##___________________________
+      
+      # *** GENERAL VARIABLES AND OBJECTS ***
+      Power_key <- powerkey(N)
+      NK <- array(0, dim=c(n_landscapes, 2^N, 2*N+2))
+      
+      start_time <- Sys.time()
+      for (i_1 in 1:n_landscapes) {
+        nkland_i1 <- nkland(N, component_coCovar, component_value_sd)
+        NK[i_1,,] <- comb_and_values(N, nkland_i1, Power_key, Int_matrix)
+      }
+      end_time <- Sys.time()
+      run_time <-  end_time - start_time
+      
+      self$fitness_landscape <- NK
+      
+      # Print average number of peaks per landscape
+      # average_peaks <- sum(NK[, , (2*N+2)]) / n_landscapes
+      # cat("\nThe average number of peaks per landscape is:", average_peaks, "\n")
+      npeaks_vec <- sapply(1:n_landscapes, function(i) sum(NK[i,,(2*N+2)]) )
+      peaks <- psych::describe(npeaks_vec)
+      cat("\nThe mean number of peaks per landscape is:", peaks$mean, "\n")
+      cat("\nThe std. deviation of the number of peaks per landscape is:", peaks$sd, "\n")
+      cat("\nThe skewness of the number of peaks per landscape is:", peaks$skew, "\n")
+      cat("\nThe kurtosis of the number of peaks per landscape is:", peaks$kurtosis, "\n")
+      
+      # Print elapsed time
+      cat("\nElapsed time:", round(run_time, 2), "sec\n")
+      
+    },
+    
+    
+    
+    
     
     
     
@@ -719,6 +1150,7 @@ SaomNkRSienaBiEnv <- R6Class(
       # ##  3.1. set payoff rules (formulas)
       # self$config_payoff_formulas <- payoff_formulas
     },
+    
     
     # #
     # search_rsiena_multiwave_init = function(structure_model, bipartite_matrix_0, bipartite_matrix_1, get_eff_doc = FALSE) {
@@ -1225,7 +1657,7 @@ SaomNkRSienaBiEnv <- R6Class(
         stop('Run RSiena simulations to set rsiena_model$sims before get_bipartite_matrix_from_rsiena_model.')
       # sim_id_last <- length( rsiena_model$sims ) ##
       sim_id <- ifelse(is.null(sim_iteration), 
-                       length(rsiena_model$sims), ## default current state is the last simulation in sims list
+                       length(rsiena_model$chain), ## default current state is the last simulation in sims list
                        sim_iteration)
       bi_env_dv_id <- which( names(self$config_structure_model) == 'dv_bipartite' )
       ##
@@ -1261,23 +1693,30 @@ SaomNkRSienaBiEnv <- R6Class(
       # ## actor Utility vector
       # au <- c( mat %*% self$rsiena_model$theta )
       # hist( util )
-      effnames <- unlist(sapply(self$config_structure_model$dv_bipartite$effects, function(x) x$effect))
+      struct_effnames <- sapply(self$config_structure_model$dv_bipartite$effects, function(x) x$effect)
       #
-      coCovar_effnames  <- unlist(sapply(self$config_structure_model$dv_bipartite$coCovars, function(x) x$effect))
-      varCovar_effnames <- unlist(sapply(self$config_structure_model$dv_bipartite$varCovars, function(x) x$effect))
+      coCovar_effnames  <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x) x$effect)
+      varCovar_effnames <- sapply(self$config_structure_model$dv_bipartite$varCovars, function(x) x$effect)
+      coDyadCovar_effnames <- sapply(self$config_structure_model$dv_bipartite$coDyadCovars, function(x) x$effect)
+      varDyadCovar_effnames <- sapply(self$config_structure_model$dv_bipartite$varDyadCovars, function(x) x$effect)
       ## ALL effect names
-      effnames <- c(effnames, coCovar_effnames, varCovar_effnames)
+      effnames <- unlist(c(struct_effnames, coCovar_effnames, varCovar_effnames, coDyadCovar_effnames, varDyadCovar_effnames))
       
       #
       config_param_vals <- c(
         unlist(sapply(self$config_structure_model$dv_bipartite$effects, function(x) x$parameter)),
         unlist(sapply(self$config_structure_model$dv_bipartite$coCovars, function(x) x$parameter)),
-        unlist(sapply(self$config_structure_model$dv_bipartite$varCovars, function(x) x$parameter))
+        unlist(sapply(self$config_structure_model$dv_bipartite$varCovars, function(x) x$parameter)),
+        unlist(sapply(self$config_structure_model$dv_bipartite$coDyadCovars, function(x) x$parameter)),
+        unlist(sapply(self$config_structure_model$dv_bipartite$varDyadCovars, function(x) x$parameter))
       )
+      names(config_param_vals) <- effnames
       fixed_params <- c(
         unlist(sapply(self$config_structure_model$dv_bipartite$effects, function(x) x$fix)),
         unlist(sapply(self$config_structure_model$dv_bipartite$coCovars, function(x) x$fix)),
-        unlist(sapply(self$config_structure_model$dv_bipartite$varCovars, function(x) x$fix))
+        unlist(sapply(self$config_structure_model$dv_bipartite$varCovars, function(x) x$fix)),
+        unlist(sapply(self$config_structure_model$dv_bipartite$coDyadCovars, function(x) x$fix)),
+        unlist(sapply(self$config_structure_model$dv_bipartite$varDyadCovars, function(x) x$fix))
       )
       
       ## Use system bipartite matrix as start
@@ -1496,7 +1935,7 @@ SaomNkRSienaBiEnv <- R6Class(
     # Our aims don't make use of columns 7-10
     # 11 - Designates stability (i.e., “True” means no change, “False” means change) 
     ##
-    search_rsiena_process_ministep_chain = function() {
+    search_rsiena_process_ministep_chain = function(verbose=TRUE) {
       
       if (is.null(self$rsiena_model$chain)) {
         stop("Chain not available. Ensure returnChains=TRUE was set in the siena07 call.")
@@ -1558,10 +1997,13 @@ SaomNkRSienaBiEnv <- R6Class(
       ## set to simulation self
       self$chain_stats <- chainDat
         
-      
-      print(head(self$chain_stats))
-      print(summary(self$chain_stats))
-      print(dim(self$chain_stats))
+      if (verbose) {
+        cat('\n\n\nSimulated Decision Chain Summary:\n\n')
+        print(summary(self$chain_stats))
+        print(dim(self$chain_stats))
+        print(self$chain_stats)
+      }
+
     },
     
     #
@@ -1592,16 +2034,16 @@ SaomNkRSienaBiEnv <- R6Class(
     },
     
     
-    #
-    process_sims = function() {
-     
-      #   'K_A'=list(), ##**TODO** Actor social space [degree = central position in social network]
-      #   'K_B'=list(), #  Bipartite space  [ degree = resource/affiliation density ]
-      #   'K_C'=list()  #  Component space  [ degree = interdependence/structuration : epistatic interactions ]
-      #   ), 
-      
-      self$sims_stats <- NULL
-    },
+    # #
+    # process_sims = function() {
+    #  
+    #   #   'K_A'=list(), ##**TODO** Actor social space [degree = central position in social network]
+    #   #   'K_B'=list(), #  Bipartite space  [ degree = resource/affiliation density ]
+    #   #   'K_C'=list()  #  Component space  [ degree = interdependence/structuration : epistatic interactions ]
+    #   #   ), 
+    #   
+    #   self$sims_stats <- NULL
+    # },
     
     
     ##===================== PLOTTING ============================
@@ -3727,7 +4169,7 @@ SaomNkRSienaBiEnv <- R6Class(
     npoints <- nrow(self$chain_stats) * self$M
     #
     point_size <- 6 / log10( npoints )
-    point_alpha <- min( 1,  .5/log10( npoints ) )
+    point_alpha <- min( 1,  .55/log10( npoints ) )
     #
     suppressMessages({
       plt.act <-  ggplot(aes(x=chain_step_id, y=utility, color=strategy), 
@@ -3762,7 +4204,7 @@ SaomNkRSienaBiEnv <- R6Class(
     npoints <- nrow(self$chain_stats) * self$M
     #
     point_size <- 6 / log10( npoints )
-    point_alpha <- min( 1,  .5/log10( npoints ) )
+    point_alpha <- min( 1,  .55/log10( npoints ) )
     #
     suppressMessages({
       plt.act <- tmpdf %>%       #ungroup() %>%
@@ -3788,8 +4230,96 @@ SaomNkRSienaBiEnv <- R6Class(
 
 
   ##
-  plot_utility_components = function(use_contributions=FALSE, loess_span=0.5, return_plot=TRUE, save_plot=FALSE) {
+  plot_utility_components = function(use_contributions=TRUE, loess_span=0.5, return_plot=TRUE, save_plot=FALSE) {
+    #
+    structure_model <- self$config_structure_model
     ##==================================================
+    #
+    # eff <- m1$rsiena_effects[m1$rsiena_effects$include, ]
+    efflist <- c(
+      structure_model$dv_bipartite$effects,
+      structure_model$dv_bipartite$coCovars,
+      structure_model$dv_bipartite$varCovars,
+      structure_model$dv_bipartite$coDyadCovars,
+      structure_model$dv_bipartite$varDyadCovars
+    )
+    #
+    neffs <- length(efflist)
+    ### empty matrix to hold actor network statistics
+    effnames <- sapply(efflist, function(x) x$effect, simplify = T)
+    effparams <- sapply(efflist, function(x) x$parameter, simplify = T)
+    
+    names(effparams) <- effnames
+    
+    
+    
+    
+    
+    ACTORS     <- sienaNodeSet(self$M, nodeSetName="ACTORS")
+    COMPONENTS <- sienaNodeSet(self$N, nodeSetName="COMPONENTS")
+    # strat_mat_varCovar <- varCovar(strat_eff$x, nodeSet = 'ACTORS')
+    if (! 'coCovars' %in% names(structure_model$dv_bipartite) ) {
+      rsiena_data <- sienaDataCreate(list(self$bipartite_rsienaDV), nodeSets = list(ACTORS, COMPONENTS))
+      return(rsiena_data)
+    }
+    dv_name <- structure_model$dv_bipartite$name
+    
+    
+    structeffs <- sapply(structure_model$dv_bipartite$effects, function(x)x$parameter)
+    names(structeffs) <- sapply(structure_model$dv_bipartite$effects, function(x)x$effect)
+    
+    # coCovarParams     <- sapply(structure_model$dv_bipartite$coCovars, function(x)x$effect)
+    # varCovarParams     <- sapply(structure_model$dv_bipartite$varCovars, function(x)x$effect)
+    # coDyadCovarParams  <- sapply(structure_model$dv_bipartite$coDyadCovars, function(x)x$effect)
+    # varDyadCovarParams <- sapply(structure_model$dv_bipartite$varDyadCovars, function(x)x$effect)
+    
+    coCovars     <- sapply(structure_model$dv_bipartite$coCovars, function(x)x$effect)
+    varCovars     <- sapply(structure_model$dv_bipartite$varCovars, function(x)x$effect)
+    coDyadCovars  <- sapply(structure_model$dv_bipartite$coDyadCovars, function(x)x$effect)
+    varDyadCovars <- sapply(structure_model$dv_bipartite$varDyadCovars, function(x)x$effect)
+    
+    coCovars_param     <- sapply(structure_model$dv_bipartite$coCovars, function(x)x$parameter)
+    varCovars_param     <- sapply(structure_model$dv_bipartite$varCovars, function(x)x$parameter)
+    coDyadCovars_param  <- sapply(structure_model$dv_bipartite$coDyadCovars, function(x)x$parameter)
+    varDyadCovars_param <- sapply(structure_model$dv_bipartite$varDyadCovars, function(x)x$parameter)
+    
+    covs <- unlist(c(coCovars_param, varCovars_param, coDyadCovars_param,  varDyadCovars_param))
+    names(covs) <- unlist(c(coCovars, varCovars, coDyadCovars, varDyadCovars))
+    
+    coCovarTypes     <- sapply(structure_model$dv_bipartite$coCovars, function(x)x$interaction1)
+    varCovarTypes     <- sapply(structure_model$dv_bipartite$varCovars, function(x)x$interaction1)
+    coDyadCovarTypes  <- sapply(structure_model$dv_bipartite$coDyadCovars, function(x)x$interaction1)
+    varDyadCovarTypes <- sapply(structure_model$dv_bipartite$varDyadCovars, function(x)x$interaction1)
+    
+    vartypes <- unlist(c(coCovarTypes, varCovarTypes, coDyadCovarTypes, varDyadCovarTypes))
+    component_type_ids <-  grep('self\\$component.+var', vartypes)
+    strat_type_ids <-  grep('self\\$strat.+var', vartypes)
+    
+    # component_coCovar_ids     <- grep('self\\$component.+_coCovar', coCovarTypes) ## ex: "self$component_1_coCovar"
+    # component_varCovar_ids    <- grep('self\\$component.+_varCovar', varCovarTypes) ## ex: "self$component_1_coCovar"
+    # component_coDyadCovar_ids  <- grep('self\\$component.+_coDyadCovar', coDyadCovarTypes) ## ex: "self$component_1_coCovar"
+    # component_varDyadCovar_ids <- grep('self\\$component.+_varDyadCovar', varDyadCovarTypes) ## ex: "self$component_1_coCovar"
+    
+    # strat_coCovar_ids     <- grep('self\\$strat.+_coCovar', coCovarTypes) ## ex: "self$component_1_coCovar"
+    # strat_varCovar_ids    <- grep('self\\$strat.+_varCovar', varCovarTypes) ## ex: "self$component_1_coCovar"
+    # strat_coDyadCovar_ids  <- grep('self\\$strat.+_coDyadCovar', coDyadCovarTypes) ## ex: "self$component_1_coCovar"
+    # strat_varDyadCovar_ids <- grep('self\\$strat.+_varDyadCovar', varDyadCovarTypes) ## ex: "self$component_1_coCovar"
+    # stratDV_ids     <- grep('self\\$strat_\\d{1,2}_coCovar', covDvTypes ) ## ex: "self$strat_1_coCovar"
+    
+    # ncompo_coCovar     <- length( component_coCovar_ids )
+    # ncompo_varCovar    <- length( component_varCovar_ids )
+    # ncompo_coDyadCovar  <- length( component_coDyadCovar_ids )
+    # ncompo_varDyadCovar <- length( component_varDyadCovar_ids )
+    # 
+    # nstrat_coCovar     <- length( strat_coCovar_ids )
+    # nstrat_varCovar    <- length( strat_varCovar_ids )
+    # nstrat_coDyadCovar  <- length( strat_coDyadCovar_ids )
+    # nstrat_varDyadCovar <- length( strat_varDyadCovar_ids )
+    
+    
+    # compo_vars <- c()
+    
+  
     ## actor strategy
     # if ( attr(self$strat_1_coCovar, 'nodeSet') != 'ACTORS' )
     #   stop("Actor Strategy self$strat_1_coCovar not set.")
@@ -3798,40 +4328,48 @@ SaomNkRSienaBiEnv <- R6Class(
     #
     nstep <- sum(!self$chain_stats$stability)
     dv_bipartite <- self$config_structure_model$dv_bipartite
-    ## levels order
-    coveffs   <- sapply(dv_bipartite$coCovars, function(x)x$effect)
-    covparams <- sapply(dv_bipartite$coCovars, function(x)x$parameter)
-    covfixs   <- sapply(dv_bipartite$coCovars, function(x)ifelse(x$fix,'','(var)'))
-    #
-    strateffs   <- sapply(dv_bipartite$coCovars, function(x)x$effect)
-    stratparams <- sapply(dv_bipartite$coCovars, function(x)x$parameter)
-    stratfixs   <- sapply(dv_bipartite$coCovars, function(x)ifelse(x$fix,'','(var)'))
-    # stratfixs   <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)substr(as.character(x$fix),1,1))
-    #
-    structeffs   <- sapply(dv_bipartite$effects, function(x)x$effect)
-    structparams <- sapply(dv_bipartite$effects, function(x)x$parameter)
-    structfixs   <- sapply(dv_bipartite$effects, function(x)ifelse(x$fix,'','(var)'))
-    # structfixs   <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)substr(as.character(x$fix),1,1))
-    covDvTypes <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)x$interaction1)
-    componentDV_ids <- grep('self\\$component_\\d{1,2}_coCovar', covDvTypes) ## ex: "self$component_1_coCovar"
-    stratDV_ids     <- grep('self\\$strat_\\d{1,2}_coCovar', covDvTypes ) ## ex: "self$strat_1_coCovar"     
+    # ## levels order
+    # coveffs   <- sapply(dv_bipartite$coCovars, function(x)x$effect)
+    # covparams <- sapply(dv_bipartite$coCovars, function(x)x$parameter)
+    # covfixs   <- sapply(dv_bipartite$coCovars, function(x)ifelse(x$fix,'','(var)'))
+    # #
+    # strateffs   <- sapply(dv_bipartite$coCovars, function(x)x$effect)
+    # stratparams <- sapply(dv_bipartite$coCovars, function(x)x$parameter)
+    # stratfixs   <- sapply(dv_bipartite$coCovars, function(x)ifelse(x$fix,'','(var)'))
+    # # stratfixs   <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)substr(as.character(x$fix),1,1))
+    # #
+    # structeffs   <- sapply(dv_bipartite$effects, function(x)x$effect)
+    # structparams <- sapply(dv_bipartite$effects, function(x)x$parameter)
+    # structfixs   <- sapply(dv_bipartite$effects, function(x)ifelse(x$fix,'','(var)'))
+    # # structfixs   <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)substr(as.character(x$fix),1,1))
+    
+    # covDvTypes <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)x$interaction1)
+    # componentDV_ids <- grep('self\\$component.+var', covDvTypes) ## ex: "self$component_1_coCovar"
+    # stratDV_ids     <- grep('self\\$strat.+var', covDvTypes ) ## ex: "self$strat_1_coCovar"  
+    
+    
+    
     #
     sim_title_str <- sprintf(
       'Environment: Actors (M) = %s, Components (N) = %s, Init.Prob. = %.2f\nActor Strategy:  %s\nComponent Payoff:  %s\nStructure:  %s', 
       self$M, self$N, self$BI_PROB,
-      paste( paste(paste(strateffs[stratDV_ids], stratparams[stratDV_ids], sep='= '), stratfixs[stratDV_ids], sep='' ), collapse = ';  '),
-      paste( paste(paste(strateffs[componentDV_ids], stratparams[componentDV_ids], sep='= '), stratfixs[componentDV_ids], sep=''), collapse = ';  '),
-      paste( paste(paste(structeffs, structparams, sep='= '), structfixs, sep=''), collapse = ';  ')
+      paste( paste(paste(names(covs)[strat_type_ids], covs[strat_type_ids], sep='= '), sep='' ), collapse = ';  '),
+      paste( paste(paste(names(covs)[component_type_ids], covs[component_type_ids], sep='= '), sep=''), collapse = ';  '),
+      paste( paste(paste(names(structeffs), structeffs, sep='= '), sep=''), collapse = ';  ')
     )
-    #
-    compoeffs   <- coveffs[ componentDV_ids ]
-    compoparams <- covparams[ componentDV_ids ]
-    compofixs   <- covfixs[ componentDV_ids ]
-    #
-    strateffs   <- coveffs[ stratDV_ids ]
-    stratparams <- covparams[ stratDV_ids ]
-    stratfixs   <- covfixs[ stratDV_ids ]
-    efflvls <- c('utility', strateffs, compoeffs, structeffs)
+    # #
+    # compoeffs   <- coveffs[ componentDV_ids ]
+    # compoparams <- covparams[ componentDV_ids ]
+    # compofixs   <- covfixs[ componentDV_ids ]
+    # #
+    # strateffs   <- coveffs[ stratDV_ids ]
+    # stratparams <- covparams[ stratDV_ids ]
+    # stratfixs   <- covfixs[ stratDV_ids ]
+    efflvls <- c('utility', 
+                 names(covs)[strat_type_ids], 
+                 names(covs)[component_type_ids],
+                 names(structeffs)
+                 )
     ##=================================================
     ##--------------------------------------------------------------
     ## 2. Strategy Signals
@@ -3869,8 +4407,8 @@ SaomNkRSienaBiEnv <- R6Class(
     # nstep <- length(unique(act_effs2$chain_step_id))
     npoints <- nrow(self$chain_stats) * self$M
     #
-    point_size <- 6 / log10( npoints )
-    point_alpha <- min( 1,  .5/log10( npoints ) )
+    point_size <- 4 / log10( npoints )
+    point_alpha <- min( 1,  .55/log10( npoints ) )
     
     suppressMessages({
       plt2 <- act_effs2  %>% 
@@ -3908,7 +4446,7 @@ SaomNkRSienaBiEnv <- R6Class(
     npoints <- nrow(self$chain_stats) * self$M
     #
     point_size <- 6 / log10( npoints )
-    point_alpha <- min( 1,  .5/log10( npoints ) )
+    point_alpha <- min( 1,  .55/log10( npoints ) )
     
     suppressMessages({
       plt <- Kdf2 %>% 
@@ -3942,7 +4480,7 @@ SaomNkRSienaBiEnv <- R6Class(
     npoints <- nrow(self$chain_stats) * self$M
     #
     point_size <- 6 / log10( npoints )
-    point_alpha <- min( 1,  .5/log10( npoints ) )
+    point_alpha <- min( 1,  .55/log10( npoints ) )
     
     suppressMessages({
       plt <- Kdf1 %>% 
@@ -4024,7 +4562,7 @@ SaomNkRSienaBiEnv <- R6Class(
     util_lim <- c(density_rng[1] - density_absdiff_scale,  density_rng[2] + density_absdiff_scale)
     #
     point_size <- 6 / log10( npoints )
-    point_alpha <- min( 1,  .5/log10( npoints ) )
+    point_alpha <- min( 1,  .55/log10( npoints ) )
     #
     if(length(actor_ids))
       dat <- dat %>% filter(actor_id %in% actor_ids)
@@ -4033,7 +4571,7 @@ SaomNkRSienaBiEnv <- R6Class(
     if(show_utility_points)
       plt <- plt + geom_point(aes(color=strategy), alpha=point_alpha, shape=1, size=point_size)  # geom_line(alpha=.2) +#geom_smooth(method='loess', alpha=.1) + 
     if(self$exists(smooth_method))
-      plt <- plt + geom_smooth(aes(color=strategy, fill=strategy, shape=actor_id), 
+      plt <- plt + geom_smooth(aes(color=strategy, fill=strategy, linetype=actor_id), 
                                method = smooth_method, span=loess_span, linewidth=1, alpha=.09)
     #
     # plt <- plt + geom_text(aes(x=chain_step_id, y=utility, linetype=factor(actor_id)), size = 3, vjust = -1) 

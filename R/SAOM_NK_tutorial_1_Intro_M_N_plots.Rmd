@@ -1,5 +1,5 @@
 ---
-title: 'SaoMNK Tutorial: Endogenizing the Strategic Search Landscape'
+title: 'SaoMNK Tutorial 1: Endogenizing the Strategic Search Landscape'
 author: "S. Downing"
 date: "`r Sys.Date()`"
 output:
@@ -8,9 +8,18 @@ output:
     df_print: paged
 ---
 
-This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code.
+This project begins from the simple premise that the task of endogenizing the 
+NK search landscape can be done by representing the search environment as a binary
+bipartite network of `M` actors affiliating with `N` components. This bipartite 
+network can be then be analyzed according to the Stochastic Actor-Oriented (SAOM) 
+[Snijders, 1996](https://doi.org/10.1080/0022250X.1996.9990178). 
 
-Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*.
+Thus, the Stochastic Actor-Oriented MNK model, abbrivated `SaoMNK`, is designed 
+for running strategic search simulation, testing, and experimentation 
+by leveraging the `RSiena` package, an R implementation of   
+Simulation Investigation for Empirical Network Analysis (SIENA).
+
+This tutorial offers a basic introduction to `SaoMNK`. 
 
 ```{r dependencies, include=FALSE}
 ####
@@ -45,6 +54,7 @@ dir_ext <- 'D:\\Search_networks'
 dir_r <- 'C:\\Users\\sdr8y\\OneDrive - University of Missouri\\Research\\Search_networks\\SaoMNK\\R'
 ###############  Load R6 Class DEPENDENCIES ############################
 ## Biparite Environment Search Simulation Class
+## load in this excluded chunk to avoid the verbose output of loading dependecies in the SaoMNK class 
 SaomNkRSienaBiEnv <- source(file.path(dir_r, 'SAOM_NK_R6_model.R'))$value
 ```
 
@@ -53,8 +63,6 @@ SaomNkRSienaBiEnv <- source(file.path(dir_r, 'SAOM_NK_R6_model.R'))$value
 ###############  Load R6 Class DEPENDENCIES ############################
 ## Biparite Environment Search Simulation Class
 SaomNkRSienaBiEnv <- source(file.path(dir_r, 'SAOM_NK_R6_model.R'))$value
-# ## RSiena search Class
-# SaomNkRSienaBiEnv_search_rsiena <- source(file.path(dir_proj, 'SAOM_NK_R6_search_rsiena_model.R'))$value
 ## default settings: Users do not change; TODO: implment within restricted class attributes
 DV_NAME <- 'self$bipartite_rsienaDV'
 ```

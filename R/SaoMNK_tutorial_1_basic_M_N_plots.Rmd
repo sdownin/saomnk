@@ -8,9 +8,18 @@ output:
     df_print: paged
 ---
 
-This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code.
+This project begins from the simple premise that the task of endogenizing the 
+NK search landscape can be done by representing the search environment as a binary
+bipartite network of `M` actors affiliating with `N` components. This bipartite 
+network can be then be analyzed according to the Stochastic Actor-Oriented Model (SAOM) 
+[(Snijders, 1996)](https://doi.org/10.1080/0022250X.1996.9990178). 
 
-Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*.
+Thus, the Stochastic Actor-Oriented MNK model, abbrivated `SaoMNK`, is designed 
+for running strategic search simulation, testing, and experimentation 
+by leveraging the `RSiena` package, an R implementation of   
+Simulation Investigation for Empirical Network Analysis (SIENA).
+
+This tutorial offers a basic introduction to `SaoMNK`. 
 
 ```{r dependencies, include=FALSE}
 ####
@@ -70,7 +79,7 @@ DV_NAME <- 'self$bipartite_rsienaDV'
 #
 environ_params <- list(
   M = 12,       ## Actors
-  N = 12,       ## Components
+  N = 6,       ## Components
   BI_PROB = 0, ## Environmental Density (DGP hyperparameter)
   component_matrix_start = 'rand', ##**TODO** Implement: 'rand','modular','semi-modular',...
   rand_seed = 1234,
@@ -78,7 +87,7 @@ environ_params <- list(
   name = '_test_tutorial_nb_'
 )
 #
-env3 <- SaomNkRSienaBiEnv$new(environ_params)
+env1 <- SaomNkRSienaBiEnv$new(environ_params)
 ```
 
 ## 1.2 Structrual Model
@@ -86,12 +95,11 @@ env3 <- SaomNkRSienaBiEnv$new(environ_params)
 SAOM Objective Function serves as the stochastic actor's utility function for strategic search. 
 
 ```{r}
-
+#
 strategies <- list(
   egoX   =   c(-1, 0, 1),
   inPopX =   c( 1, 0, -1)
 )
-
 
 ## 2.b. Component Payoffs vector
 set.seed(12345)
@@ -99,7 +107,6 @@ component_payoffs <-  runif(environ_params$N, min = 0, max = 1)
 ## 2. Strategies sets the objective function as a linear combination of network stats across DVs
 #
 actor_strats_list <- lapply(strategies, function(strat) rep(strat,  environ_params$M/length(strat)) )
-
 #
 structure_model <- list(
   dv_bipartite = list(
@@ -119,26 +126,26 @@ structure_model <- list(
       list(effect='egoX',   parameter= .1,  dv_name=DV_NAME, fix=T,
            interaction1='self$strat_1_coCovar',   x = actor_strats_list[[1]] 
       ), #interaction1 = NULL
-      list(effect='inPopX', parameter= .5,  dv_name=DV_NAME, fix=T,
+      list(effect='inPopX', parameter= .1,  dv_name=DV_NAME, fix=T,
            interaction1='self$strat_2_coCovar',  x = actor_strats_list[[2]] 
       )
     ),
     varCovars = list() ##**MONADIC TIME-VARYING COVARIATE EFFECTS -- DYNAMIC STRATEGY PROGRAMS**
   )
 )
-
 ```
 
 
 
 ```{r}
-env3$preview_effects(structure_model, filter=FALSE)
+env1$preview_effects(structure_model, filter=FALSE)
 ```
 
 
 
 ```{r}
-env3$preview_effects(structure_model, filter=TRUE)
+# ## Uncomment for HTML output with filterable data table
+env1$preview_effects(structure_model, filter=TRUE)
 ```
 
 
@@ -147,9 +154,9 @@ env3$preview_effects(structure_model, filter=TRUE)
 
 ```{r}
 ## Run Rsiena search using variable parameters in theta_matrix
-env3$search_rsiena(
+env1$search_rsiena(
   structure_model,
-  iterations = env3$M * 4,
+  iterations = env1$M * 4,
   digits = 4,
   run_seed = 12345
 )
@@ -160,25 +167,12 @@ env3$search_rsiena(
 
 
 
-## 1.4 Process simulated decision chain results
-
-
 ```{r}
-##
-env3$search_rsiena_process_ministep_chain()
-##
-env3$search_rsiena_process_stats()
-
+## 1st and last state of the bipartite matrix system
+env1$bi_env_arr[,, c(1,dim(env1$bi_env_arr)[3]) ]
 ```
 
-
-
-```{r}
-## Run Rsiena search using variable parameters in theta_matrix
-env3$bi_env_arr[,, c(1,2,dim(env3$bi_env_arr)[3]) ]
-```
-
-## 1.5 Print Bipartite Search Network Snapshots 
+## 1.4 Print Bipartite Search Network Snapshots 
 
 Snapshopts of the the biparite network and the social and component epistasis interactions
 are taken at fixed step intervals to show the evolving multidimensional coupled search 
@@ -186,277 +180,111 @@ environment (actors and components)
 
 
 ```{r, fig.height=5, fig.width=11}
-# snapshot_ids <- round( seq(1, dim(env3$bi_env_arr)[3], length=3 ) )
-snapshot_ids <- c(1, 1+ (1:3)*env3$M)
+# snapshot_ids <- round( seq(1, dim(env1$bi_env_arr)[3], length=3 ) )
+snapshot_ids <- c(1, 1+ (1:3)*env1$M)
 for (i in 1:length(snapshot_ids)) {
   step <- snapshot_ids[ i ]
-  # suppressMessages({
-    env3$plot_bipartite_system_from_mat(env3$bi_env_arr[,,step], step)
-  # })
+  mat  <- env1$bi_env_arr[,,step]
+  env1$plot_bipartite_system_from_mat(mat, step)
 }
 ```
 
 
 
-## 1.6 Plot Actor Degrees (Component Scope and Common Affiliation Social Ties)
+## 1.5 Plot Actor Degrees (Component Scope and Common Affiliation Social Ties)
 
 
 Time series is simulated decision steps.
 
 ```{r, fig.height=6, fig.width=6.5, fig.dpi=800}
 ##
-env3$plot_actor_degrees(loess_span = 0.25)
+env1$plot_actor_degrees(loess_span = 0.35)
 ```
 
 
 
-## 1.7 Plot Component Degrees (Membership/Popularity and Common Actor Epistasis Ties)
+## 1.6 Plot Component Degrees (Membership/Popularity and Common Actor Epistasis Ties)
 
 ```{r, fig.height=6, fig.width=6.5, fig.dpi=800}
 ##
-env3$plot_component_degrees(loess_span = 0.35)
+env1$plot_component_degrees(loess_span = 0.35)
 
 ```
 
 
 
 
-## 1.8 Plot Utility by Strategy over Time (Simulated Decision Steps) 
+## 1.7 Plot Utility by Strategy over Time (Simulated Decision Steps) 
 
 ```{r, warning=FALSE, echo=FALSE}
 
-env3$plot_strategy_utility() + 
+env1$plot_strategy_utility() + 
   ggtitle('Utility by Strategy\nLoess Curves vs. Periodwise Avg. in Black')
 
 ```
 
 
 
-## 1.9 Plot Utility by Actor over Time (Simulated Decision Steps) 
+## 1.8 Plot Utility by Actor over Time (Simulated Decision Steps) 
 
 ```{r, warning=FALSE, echo=FALSE}
 
-env3$plot_actor_utility() + 
+env1$plot_actor_utility() + 
   ggtitle('Utility by Actor\nLoess Curves vs. Periodwise Avg. in Black')
 
 ```
 
 
 
-## 1.10 Plot Contributions to Actor Utility colored by Strategy
+## 1.9 Plot Contributions to Actor Utility colored by Strategy
 
 Time series is simulated decision steps.
 
 ```{r,  fig.height=11, fig.width=8, fig.dpi=800}
 ##
-env3$plot_utility_components(use_contributions=TRUE, loess_span=0.35)
+env1$plot_utility_components(loess_span=0.35)
 ```
 
 
 
 
-## 1.11 Plot Actor Utility Timeseries and Distribution by Strategy
+## 1.10 Plot Actor Utility Timeseries and Distribution by Strategy
 
 ```{r, fig.height=6, fig.width=8, fig.dpi=800}
-env3$plot_actor_utility_strategy_summary()
+env1$plot_actor_utility_strategy_summary(loess_span=0.5)
 ```
 
 
 
 
 
-## 1.12  Actor Utility Distribution by Landscape Distance 
+## 1.11  Fitness Landscape Peaks Distributions 
 
 Number of changes to component ties as distance from counterfactual affiliation configurations
 
+```{r}
+## Use random uniform values for all combinations like traditional NK model
+env1$compute_fitness_landscape(component_coCovar=NA)
+```
+
 
 ```{r}
-if (env3$N <= 16)
-{
-    
-  ######################
-  ##**TODO**
-  
-  self <- env3
-  
-  
-  #
-  config_param_vals <- c(
-    unlist(sapply(self$config_structure_model$dv_bipartite$effects, function(x) x$parameter)),
-    unlist(sapply(self$config_structure_model$dv_bipartite$coCovars, function(x) x$parameter)),
-    unlist(sapply(self$config_structure_model$dv_bipartite$varCovars, function(x) x$parameter))
-  )
-  fixed_params <- c(
-    unlist(sapply(self$config_structure_model$dv_bipartite$effects, function(x) x$fix)),
-    unlist(sapply(self$config_structure_model$dv_bipartite$coCovars, function(x) x$fix)),
-    unlist(sapply(self$config_structure_model$dv_bipartite$varCovars, function(x) x$fix))
-  )
-  #
-  #UTILITY
-  theta   <- self$rsiena_model$thetaUsed
-  ## replace fixed theta param with given param values (instead of zero default when effect is fixed)
-  # if (any(fixed_params)) theta[ fixed_params ] <- config_param_vals[ fixed_params ]
-  
-  
-  
-  ## PLOT ACTOR UTILITY LANDSCAPE
-  utilist <- list()
-  statsl <- list()
-  pltlist <- list()
-  
-  # step_ids <- round(c(1,8,64,512, self$rsiena_model$n3/2, self$rsiena_model$n3))
-  acpds <- seq(1, nrow(theta), by= self$M )
-  step_ids <- c(acpds[1:min(3, length(acpds))])
-  for (step_id in step_ids) {
-    # step_id <- 1
-    cat(sprintf('\nstep %s: actors ', step_id))
-    
-    bi_env_mat_step <- self$bi_env_arr[, , step_id]
-    
-    act_counterfacts <- list()
-    
-  
-    for (i in 1:min(3, self$M)) {
-      cat(sprintf(' %s ', i))
-      
-      
-      ##**ACTOR i DECISION PERSPECTIVE** 0000000000000000000000000000000000
-      
-      ##**TODO**
-      ## ALL actor-component counterfactual configuations for Actor i  (2^N rows by N cols)
-      iland <- expand.grid(lapply(1:self$N, function(x) 0:1 ))
-      iland_config_step_row_id <- which(apply(iland, 1, function(x) all(x == bi_env_mat_step[i,]) ))
-      
-      tmpmat <- bi_env_mat_step
-      ## ifit dimensions [ M, 2^N ]
-      ifit <- apply(iland, 1, function(x){
-        tmpmat[i,] <- x  ## set counterfactual actor-component configuration
-        config_fit <- if('matrix' %in% class(theta)) {
-          self$get_struct_mod_stats_mat_from_bi_mat( tmpmat ) %*% theta[step_id,] ## variable thetas
-        } else {
-          self$get_struct_mod_stats_mat_from_bi_mat( tmpmat ) %*% theta   ## fixed thetas
-        }
-        return( config_fit ) ## compute utility vector
-      }) 
-      
-      # apply
-      
-      ids.max <- which(ifit == max(ifit), arr.ind = TRUE) 
-      fits.max <- ifit[ ids.max ]
-      nmax <- length(fits.max)
-      
-      # ifit
-      
-      # ids.max[1,]
-      
-      act_counterfacts[[i]] <- list(
-        ifit = ifit, #Given all other ties, Actor i's configurations applied to utility func for all actors
-        ids.max = ids.max,
-        fits.max = fits.max,
-        nmax = nmax
-      )
-      
-      ## distances of each counterfactual configuration 
-      dist_counterfac <- iland - bi_env_mat_step[i, ]
-      z <- apply( dist_counterfac, 1, function(x) {
-        c(dist=sum(x!=0),
-          `drop`=sum(x==-1), 
-          `nochange`=sum(x==0),
-          `add`=sum(x==1), 
-          counterfac=paste(x, collapse = '|'), 
-          start=paste(bi_env_mat_step[i, ], collapse = '|') 
-          )
-      })
-      # z <- z[,order(z['d',], decreasing = F)]
-      ##**TODO**
-      ##**INFORMATION LOSS**
-      ##  This uses only ego's own counterfactual fits (landscape)
-      ##  but the corresponding other actor's affected fits (landscapes are not currently used )
-      z <- rbind(z, utility_ego=ifit[ i , ] )
-      z <- rbind(z, utility_alter_mean= colMeans(ifit[ -i , ], na.rm = T) )
-      z <- rbind(z, utility_alter_sd  = apply(ifit[ -i , ], 2, function(x) sd(x, na.rm = T)) )
-      
-      wdf <- as.data.frame( t(z) )
-      
-      actfit_long <- wdf %>% 
-        mutate(
-          dist = as.numeric(dist),
-          drop = as.numeric(drop),
-          nochange = as.numeric(nochange),
-          add = as.numeric(add) ,
-          utility_ego=as.numeric(utility_ego),
-          utility_alter_mean = as.numeric(utility_alter_mean),
-          utility_alter_sd = as.numeric(utility_alter_sd)
-        ) %>%
-        pivot_longer(cols = c( drop:add, utility_ego:utility_alter_sd )) 
-       
-      
-      plt <- actfit_long %>% ggplot(aes(x=value))+ 
-        # geom_density() + 
-        geom_histogram() +
-        facet_grid(dist ~ name, scales='free_x') + theme_bw() + 
-        ggtitle(sprintf('Utility Transition Paths: Actor %s, Step %s', i, step_id))
-      
-      pltlist[[ length(pltlist)+1 ]] <- plt
-      
-      # z <- apply(iland, 1, function(x) {
-      #   x <- plyr::count( x - bi_env_mat_step[i, ]) 
-      #   cnts <- merge(x$freq, data.frame(x=c())
-      #   names(cnts) <- x$x
-      #   return(cnts)
-      # }, simplify = T)
-      # 
-      # stringdist::stringdist( , , method='hamming')
-      
-      step_actor_key <- sprintf('%s|%s',step_id,i)
-      
-      statsl[[step_actor_key]] <- list(
-        actfit_long = actfit_long,
-        act_counterfacts = act_counterfacts,
-        plt = plt,
-        actor_id=i, chain_step_id = step_id,
-        strategy=as.factor(self$strat_1_coCovar[i])
-      )
-      
-      actor_strats <- env3$get_actor_strategies()
-      
-      utilist[[step_actor_key]] <- actfit_long %>% 
-        filter(name %in% c('utility_ego','utility_alter_mean')) %>%
-        mutate(actor_id=i, chain_step_id = step_id, strategy=as.factor(actor_strats[i]))
-      
-    } ##/end actor loop
-    
-    # # Arrange plots across multiple pages
-    # multi_page_plot <- marrangeGrob(pltlist, nrow = 1, ncol = 1)
-    # 
-    # # Save to a PDF
-    # ggsave("multi_page_plots.pdf", multi_page_plot, width = 8, height = 8)
-    
-  } ##/end step loop
-  
-  #
-  utildf <- data.table::rbindlist(utilist, use.names = T, idcol = 'step_actor_key')
-  
-  
-  ##--------------------------------------------------------------
-  ## 4.  Actor Utility Transition Paths
-  ##--------------------------------------------------------------
-  # Arrange plots across multiple pages
-  plt_act_paths <- marrangeGrob(pltlist, nrow = 1, ncol = 1)
-  plt_act_paths
-  # # Save to a PDF
-  # actor_path_plotfile <- sprintf('%s_actor_pd_dist2peaks.pdf', self$UUID)
-  # plot_dir <- getwd()
-  # ggsave(filename = file.path(plot_dir, actor_path_plotfile), plt_act_paths, 
-  #        width = 8, height = 8)
-
-  
-} 
-
+## Use the component values as the means of random noise for different payoff combinations 
+env1$compute_fitness_landscape(component_coCovar=1)
 ```
 
 
 
+```{r}
+## LOWER SD of component values noise for different payoff combinations 
+env1$compute_fitness_landscape(component_coCovar=1, component_value_sd=0.01)
+```
+
+
+```{r}
+## HIGHER SD of component values noise for different payoff combinations 
+env1$compute_fitness_landscape(component_coCovar=1, component_value_sd=0.5)
+```
 
 
 
@@ -508,8 +336,8 @@ structure_model <- list(
     name = 'self$bipartite_rsienaDV',
     effects = list( ##**STRUCTURAL EFFECTS -- dyadic/network endogeneity sources**
       list(effect='density', parameter= -1, fix=T, dv_name=DV_NAME), ##interaction1 = NULL
-      list(effect='inPop',   parameter= 0.4, fix=T, dv_name=DV_NAME), #interaction1 = NUL
-      list(effect='outAct',  parameter= 0.4, fix=T, dv_name=DV_NAME)
+      list(effect='inPop',   parameter= .1, fix=T, dv_name=DV_NAME), #interaction1 = NUL
+      list(effect='outAct',  parameter= .1, fix=T, dv_name=DV_NAME)
     ),
     ## COVARIATE EFFECTS
     coCovars = list( 
@@ -521,52 +349,13 @@ structure_model <- list(
       list(effect='egoX',   parameter= .1,  fix=T,dv_name=DV_NAME, 
            interaction1='self$strat_1_coCovar',     x = actor_strats_list[[1]] 
       ), #interaction1 = NULL
-      list(effect='inPopX', parameter= .5,  fix=T,dv_name=DV_NAME, 
+      list(effect='inPopX', parameter= .1,  fix=T,dv_name=DV_NAME, 
            interaction1='self$strat_2_coCovar',  x = actor_strats_list[[2]] 
       )
     ),
     varCovars = list() ##**MONADIC TIME-VARYING COVARIATE EFFECTS -- DYNAMIC STRATEGY PROGRAMS**
   )
 )
-
-#
-structeffs <- structure_model$dv_bipartite$effects %>% ldply(as.data.frame) # use previous effects
-coCovars   <- structure_model$dv_bipartite$coCovars %>% ldply(function(x) {
-  as.data.frame(x[! names(x)%in%c('interaction1','x')])
-}) 
-effects    <- structeffs %>% bind_rows(coCovars)
-# names_theta_in <- effects$effectName[effects$include][params_norates]
-theta_in        <- effects$parameter
-names(theta_in) <- effects$effect
-
-## Number of decision chain steps to simulate
-nrows <- environ_params$M * 10
-ncols <- length(theta_in)
-#
-shock.effects <- c('egoX','inPopX')
-shock.scale <- c( 1, 1, 1 )
-#
-shock.chunks <- 8  ## before|after
-theta_matrix <- matrix(NA,  nrow = nrows, ncol=ncols  )
-for (j in 1:ncols) {
-  do_shock <- names(theta_in)[j] %in% shock.effects 
-  nchunks   <- floor( nrows / shock.chunks ) 
-  beta_seq_1 <- rep( ifelse(do_shock, shock.scale[1] * theta_in[j],  theta_in[j]), 
-                     nchunks * 2 )  ## How many pd_chunks at what theta value?
-  beta_seq_2 <- rep( ifelse(do_shock, shock.scale[2] * theta_in[j],  theta_in[j]),
-                     nchunks * 1 ) ## number of pd_chunks at what theta value?
-  beta_seq_3 <- rep( ifelse(do_shock, shock.scale[3] * theta_in[j],  theta_in[j]), 
-                     nchunks * 5 ) ## number of pd_chunks at what theta value?
-  vec <- c( beta_seq_1, beta_seq_2, beta_seq_3 )
-  rowdiff <- nrow(theta_matrix) - length(vec)
-  if (rowdiff != 0) {
-    vec <- c( vec, rep(vec[length(vec)], round(abs(rowdiff))) ) ## add the last elements again if too short
-  }
-  #
-  theta_matrix[, j] <- vec
-}
-
-print(theta_matrix)
 
 ```
 
@@ -576,31 +365,18 @@ print(theta_matrix)
 
 ```{r}
 ## Run Rsiena search using variable parameters in theta_matrix
-env3$search_rsiena_shocks(
-  array_bi_net,
+env1$search_rsiena(
   structure_model,
-  theta_matrix,
+  iterations = env1$M * 4,
   digits = 4,
   run_seed = 12345
 )
-```
-
-
-
-
-## 2.4 Process simulated decision chain results
-
-
-```{r}
-##
-env3$search_rsiena_process_ministep_chain()
-##
-env3$search_rsiena_process_stats()
 
 ```
 
 
-## 2.5 Print Bipartite Search Network Snapshots 
+
+## 2.4 Print Bipartite Search Network Snapshots 
 
 Snapshopts of the the biparite network and the social and component epistasis interactions
 are taken at fixed step intervals to show the evolving multidimensional coupled search 
@@ -608,276 +384,306 @@ environment (actors and components)
 
 
 ```{r, fig.height=5, fig.width=11}
-# snapshot_ids <- round( seq(1, dim(env3$bi_env_arr)[3], length=3 ) )
-snapshot_ids <- c(1, 1+ (1:3)*env3$M)
+# snapshot_ids <- round( seq(1, dim(env1$bi_env_arr)[3], length=3 ) )
+snapshot_ids <- c(1, 1+ (1:3)*env1$M)
 for (i in 1:length(snapshot_ids)) {
   step <- snapshot_ids[ i ]
-  mat <- env3$bi_env_arr[,,step]
-  env3$plot_bipartite_system_from_mat(mat, step)
+  mat <- env1$bi_env_arr[,,step]
+  env1$plot_bipartite_system_from_mat(mat, step)
 }
 ```
 
 
 
-## 2.6 Plot Actor Degrees (Component Scope and Common Affiliation Social Ties)
+## 2.5 Plot Actor Degrees (Component Scope and Common Affiliation Social Ties)
 
 
 Time series is simulated decision steps.
 
 ```{r, fig.height=6, fig.width=6.5, fig.dpi=800}
 ##
-env3$plot_actor_degrees(loess_span = 0.25)
+env1$plot_actor_degrees(loess_span = 0.25)
 ```
 
 
 
-## 2.7 Plot Component Degrees (Membership/Popularity and Common Actor Epistasis Ties)
+## 2.6 Plot Component Degrees (Membership/Popularity and Common Actor Epistasis Ties)
 
 ```{r, fig.height=6, fig.width=6.5, fig.dpi=800}
 ##
-env3$plot_component_degrees(loess_span = 0.35)
+env1$plot_component_degrees(loess_span = 0.35)
 
 ```
 
 
 
 
-## 2.8 Plot Utility by Strategy over Time (Simulated Decision Steps) 
+## 2.7 Plot Utility by Strategy over Time (Simulated Decision Steps) 
 
 ```{r, warning=FALSE, echo=FALSE}
 
-env3$plot_strategy_utility() + 
+env1$plot_strategy_utility() + 
   ggtitle('Utility by Strategy\nLoess Curves vs. Periodwise Avg. in Black')
 
 ```
 
 
 
-## 2.9 Plot Utility by Actor over Time (Simulated Decision Steps) 
+## 2.8 Plot Utility by Actor over Time (Simulated Decision Steps) 
 
 ```{r, warning=FALSE, echo=FALSE}
 
-env3$plot_actor_utility() + 
+env1$plot_actor_utility() + 
   ggtitle('Utility by Actor\nLoess Curves vs. Periodwise Avg. in Black')
 
 ```
 
 
 
-## 2.10 Plot Contributions to Actor Utility colored by Strategy
+## 2.9 Plot Contributions to Actor Utility colored by Strategy
 
 Time series is simulated decision steps.
 
 ```{r,  fig.height=10, fig.width=8, fig.dpi=800}
 ##
-env3$plot_utility_components(use_contributions=TRUE, loess_span=0.35)
+env1$plot_utility_components(loess_span=0.35)
 ```
 
 
 
 
-## 2.11 Plot Actor Utility Timeseries and Distribution by Strategy
+## 2.10 Plot Actor Utility Timeseries and Distribution by Strategy
 
 ```{r, fig.height=6, fig.width=8, fig.dpi=800}
-env3$plot_actor_utility_strategy_summary()
+env1$plot_actor_utility_strategy_summary()
 ```
 
 
 
 
 
-## 2.12  Actor Utility Distribution by Landscape Distance 
+## 2.11  Fitness Landscape Peaks Distribution  
 
 Number of changes to component ties as distance from counterfactual affiliation configurations
 
 
 ```{r}
-if (env3$N <= 16)
-{
-  
-  ######################
-  ##**TODO**
-  
-  self <- env3
-  
-  
-  #
-  config_param_vals <- c(
-    unlist(sapply(self$config_structure_model$dv_bipartite$effects, function(x) x$parameter)),
-    unlist(sapply(self$config_structure_model$dv_bipartite$coCovars, function(x) x$parameter)),
-    unlist(sapply(self$config_structure_model$dv_bipartite$varCovars, function(x) x$parameter))
-  )
-  fixed_params <- c(
-    unlist(sapply(self$config_structure_model$dv_bipartite$effects, function(x) x$fix)),
-    unlist(sapply(self$config_structure_model$dv_bipartite$coCovars, function(x) x$fix)),
-    unlist(sapply(self$config_structure_model$dv_bipartite$varCovars, function(x) x$fix))
-  )
-  #
-  #UTILITY
-  theta   <- self$rsiena_model$thetaUsed
-  ## replace fixed theta param with given param values (instead of zero default when effect is fixed)
-  # if (any(fixed_params)) theta[ fixed_params ] <- config_param_vals[ fixed_params ]
-  
-  
-  
-  ## PLOT ACTOR UTILITY LANDSCAPE
-  utilist <- list()
-  statsl <- list()
-  pltlist <- list()
-  
-  # step_ids <- round(c(1,8,64,512, self$rsiena_model$n3/2, self$rsiena_model$n3))
+## Use random uniform values for all combinations like traditional NK model
+env1$compute_fitness_landscape(component_coCovar=NA)
+```
 
-  
-    # step_ids <- round(c(1,8,64,512, self$rsiena_model$n3/2, self$rsiena_model$n3))
-  acpds <- seq(1, nrow(theta), by= self$M )
-  step_ids <- c(acpds[1:min(3, length(acpds))])
-  for (step_id in step_ids) {
-    # step_id <- 1
-    cat(sprintf('\nstep %s: actors ', step_id))
-    
-    bi_env_mat_step <- self$bi_env_arr[, , step_id]
-    
-    act_counterfacts <- list()
-    
-  
-    for (i in 1:min(3, self$M)) {
-      cat(sprintf(' %s ', i))
-      
-      
-      ##**ACTOR i DECISION PERSPECTIVE** 0000000000000000000000000000000000
-      
-      ##**TODO**
-      ## ALL actor-component counterfactual configuations for Actor i  (2^N rows by N cols)
-      iland <- expand.grid(lapply(1:self$N, function(x) 0:1 ))
-      iland_config_step_row_id <- which(apply(iland, 1, function(x) all(x == bi_env_mat_step[i,]) ))
-      
-      tmpmat <- bi_env_mat_step
-      ## ifit dimensions [ M, 2^N ]
-      ifit <- apply(iland, 1, function(x){
-        tmpmat[i,] <- x  ## set counterfactual actor-component configuration
-        config_fit <- if('matrix' %in% class(theta)) {
-          self$get_struct_mod_stats_mat_from_bi_mat( tmpmat ) %*% theta[step_id,]
-        } else {
-          self$get_struct_mod_stats_mat_from_bi_mat( tmpmat ) %*% theta
-        }
-        return( config_fit ) ## compute utility vector
-      }) 
-      
-      # apply
-      
-      ids.max <- which(ifit == max(ifit), arr.ind = TRUE) 
-      fits.max <- ifit[ ids.max ]
-      nmax <- length(fits.max)
-      
-      # ifit
-      
-      # ids.max[1,]
-      
-      act_counterfacts[[i]] <- list(
-        ifit = ifit, #Given all other ties, Actor i's configurations applied to utility func for all actors
-        ids.max = ids.max,
-        fits.max = fits.max,
-        nmax = nmax
-      )
-      
-      ## distances of each counterfactual configuration 
-      dist_counterfac <- iland - bi_env_mat_step[i, ]
-      z <- apply( dist_counterfac, 1, function(x) {
-        c(dist=sum(x!=0),`drop`=sum(x==-1), `nochange`=sum(x==0), `add`=sum(x==1), 
-          counterfac=paste(x, collapse = '|'), start=paste(bi_env_mat_step[i, ], collapse = '|') )
-      })
-      # z <- z[,order(z['d',], decreasing = F)]
-      ##**TODO**
-      ##**INFORMATION LOSS**
-      ##  This uses only ego's own counterfactual fits (landscape)
-      ##  but the corresponding other actor's affected fits (landscapes are not currently used )
-      z <- rbind(z, utility_ego=ifit[ i , ] )
-      z <- rbind(z, utility_alter_mean= colMeans(ifit[ -i , ], na.rm = T) )
-      z <- rbind(z, utility_alter_sd  = apply(ifit[ -i , ], 2, function(x) sd(x, na.rm = T)) )
-      
-      wdf <- as.data.frame( t(z) )
-      
-      actfit_long <- wdf %>% 
-        mutate(
-          dist = as.numeric(dist),
-          drop = as.numeric(drop),
-          nochange = as.numeric(nochange),
-          add = as.numeric(add) ,
-          utility_ego=as.numeric(utility_ego),
-          utility_alter_mean = as.numeric(utility_alter_mean),
-          utility_alter_sd = as.numeric(utility_alter_sd)
-        ) %>%
-        pivot_longer(cols = c( drop:add, utility_ego:utility_alter_sd )) 
-       
-      
-      plt <- actfit_long %>% ggplot(aes(x=value))+ 
-        # geom_density() + 
-        geom_histogram() +
-        facet_grid(dist ~ name, scales='free_x') + theme_bw() + 
-        ggtitle(sprintf('Utility Transition Paths: Actor %s, Step %s', i, step_id))
-      
-      pltlist[[ length(pltlist)+1 ]] <- plt
-      
-      # z <- apply(iland, 1, function(x) {
-      #   x <- plyr::count( x - bi_env_mat_step[i, ]) 
-      #   cnts <- merge(x$freq, data.frame(x=c())
-      #   names(cnts) <- x$x
-      #   return(cnts)
-      # }, simplify = T)
-      # 
-      # stringdist::stringdist( , , method='hamming')
-      
-      step_actor_key <- sprintf('%s|%s',step_id,i)
-      
-      statsl[[step_actor_key]] <- list(
-        actfit_long = actfit_long,
-        act_counterfacts = act_counterfacts,
-        plt = plt,
-        actor_id=i, chain_step_id = step_id,
-        strategy=as.factor(self$strat_1_coCovar[i])
-      )
-      
-      utilist[[step_actor_key]] <- actfit_long %>% 
-        filter(name %in% c('utility_ego','utility_alter_mean')) %>%
-        mutate(actor_id=i, chain_step_id = step_id, strategy=as.factor(self$strat_1_coCovar[i]))
-      
-    } ##/end actor loop
-    
-    # # Arrange plots across multiple pages
-    # multi_page_plot <- marrangeGrob(pltlist, nrow = 1, ncol = 1)
-    # 
-    # # Save to a PDF
-    # ggsave("multi_page_plots.pdf", multi_page_plot, width = 8, height = 8)
-    
-  } ##/end step loop
-  
-  #
-  utildf <- data.table::rbindlist(utilist, use.names = T, idcol = 'step_actor_key')
-  
-  
-  ##--------------------------------------------------------------
-  ## 4.  Actor Utility Transition Paths
-  ##--------------------------------------------------------------
-  # Arrange plots across multiple pages
-  plt_act_paths <- marrangeGrob(pltlist, nrow = 1, ncol = 1)
-  plt_act_paths
-  # # Save to a PDF
-  # actor_path_plotfile <- sprintf('%s_actor_pd_dist2peaks.pdf', self$UUID)
-  # plot_dir <- getwd()
-  # ggsave(filename = file.path(plot_dir, actor_path_plotfile), plt_act_paths, 
-  #        width = 8, height = 8)
-  
-    
-      
-  
-}
+
+```{r}
+## Use the component values as the means of random noise for different payoff combinations 
+env1$compute_fitness_landscape(component_coCovar=1)
+```
+
+
+
+```{r}
+## LOWER SD of component values noise for different payoff combinations 
+env1$compute_fitness_landscape(component_coCovar=1, component_value_sd=0.01)
+```
+
+
+```{r}
+## HIGHER SD of component values noise for different payoff combinations 
+env1$compute_fitness_landscape(component_coCovar=1, component_value_sd=0.5)
+```
+
+```{r}
+## 1st and last state of the bipartite matrix system
+# dim(env1$fitness_landscape)
+
+hist(env1$fitness_landscape[ 1, , dim(env1$fitness_landscape)[3]-1 ],
+     main='Fitness Distribution of Landscape Draw 1', xlab='Fitness')
+```
+
+```{r}
+
+hist(env1$fitness_landscape[ 1, , dim(env1$fitness_landscape)[3] ],
+     main='Peaks Distribution over configurations in Landscape Draw 1', xlab='Peak')
+```
+
+
+```{r}
+env1$fitness_landscape[1,,]
+
 
 
 ```
 
 
+```{r}
+# step_ids <- round(c(1,8,64,512, self$rsiena_model$n3/2, self$rsiena_model$n3))
+acpds <- seq(1, nrow(theta), by= self$M )
+step_ids <- c(acpds[1:min(3, length(acpds))])
+#
+step_id <- step_ids[ 1 ]
+
+  # step_id <- 1
+  cat(sprintf('\nstep %s: actors ', step_id))
+  
+  bi_env_mat_step <- self$bi_env_arr[, , step_id]
+  
+  act_counterfacts <- list()
+  
+  i <- 1
+  
+  # for (i in 1:min(3, self$M)) {
+    cat(sprintf(' %s ', i))
+    
+    
+    ##**ACTOR i DECISION PERSPECTIVE** 0000000000000000000000000000000000
+    
+    ##**TODO**
+    ## ALL actor-component counterfactual configuations for Actor i  (2^N rows by N cols)
+    iland <- expand.grid(lapply(1:self$N, function(x) 0:1 ))
+    iland_config_step_row_id <- which(apply(iland, 1, function(x) all(x == bi_env_mat_step[i,]) ))
+    
+    ## fitness
+    fitness_land1 <- env1$fitness_landscape[1,,1:env1$N]
+    #
+    if ( ! all( iland == fitness_land1) ) {
+      stop('fitness landscape configurations do not match iland configurations')
+    }
+    
+    
+    
+    ##**TODO**
+    ##**TODO** COMBINE utility and 'fitness' measures in dataframe by configuration with distance from actor's current configuration
+    ##*##**TODO**
+    ##**TODO**
+    ##**TODO  CHANGE TO ACTOR-SPECIFIC LANDSCAPES **
+    tmpmat <- bi_env_mat_step
+    ## ifit dimensions [ M, 2^N ]
+    ifit <- apply(iland, 1, function(x){
+      tmpmat[i,] <- x  ## set counterfactual actor-component configuration
+      config_fit <- if('matrix' %in% class(theta)) {
+        self$get_struct_mod_stats_mat_from_bi_mat( tmpmat ) %*% theta[step_id,] ## variable thetas
+      } else {
+        self$get_struct_mod_stats_mat_from_bi_mat( tmpmat ) %*% theta   ## fixed thetas
+      }
+      return( config_fit ) ## compute utility vector
+    }) 
+    
+    actor_i <- 1
+    plot(ifit[actor_i, ])
+    
+    # apply
+    
+    # ids.max <- which(ifit == max(ifit), arr.ind = TRUE) 
+    # fits.max <- ifit[ ids.max ]
+    # nmax <- length(fits.max)
+    
+    # ifit
+    
+    # ids.max[1,]
+    
+    act_counterfacts[[i]] <- list(
+      ifit = ifit, #Given all other ties, Actor i's configurations applied to utility func for all actors
+      ids.max = ids.max,
+      fits.max = fits.max,
+      nmax = nmax
+    )
+    
+    ## distances of each counterfactual configuration 
+    dist_counterfac <- iland - bi_env_mat_step[i, ]
+    z <- sapply( 1:nrow(dist_counterfac), 1, function(i) {
+      x <- dist_counterfac[i,]
+      fit <- fitness_land1[i, ncol(fitness_land1)-1 ]
+      c(dist=sum(x!=0),
+        drop=sum(x==-1), 
+        nochange=sum(x==0),
+        add=sum(x==1), 
+        counterfac=paste(x, collapse = '|'), 
+        start=paste(bi_env_mat_step[i, ], collapse = '|'),
+        fitness=
+        )
+    })
+    # z <- apply( dist_counterfac, 1, function(x) {
+    #   c(dist=sum(x!=0),
+    #     `drop`=sum(x==-1), 
+    #     `nochange`=sum(x==0),
+    #     `add`=sum(x==1), 
+    #     counterfac=paste(x, collapse = '|'), 
+    #     start=paste(bi_env_mat_step[i, ], collapse = '|') 
+    #     )
+    # })
+    # z <- z[,order(z['d',], decreasing = F)]
+    ##**TODO**
+    ##**INFORMATION LOSS**
+    ##  This uses only ego's own counterfactual fits (landscape)
+    ##  but the corresponding other actor's affected fits (landscapes are not currently used )
+    z <- rbind(z, utility_ego=ifit[ i , ] )
+    z <- rbind(z, utility_alter_mean= colMeans(ifit[ -i , ], na.rm = T) )
+    z <- rbind(z, utility_alter_sd  = apply(ifit[ -i , ], 2, function(x) sd(x, na.rm = T)) )
+    
+    wdf <- as.data.frame( t(z) )
+    
+    actfit_long <- wdf %>% 
+      mutate(
+        dist = as.numeric(dist),
+        drop = as.numeric(drop),
+        nochange = as.numeric(nochange),
+        add = as.numeric(add) ,
+        utility_ego=as.numeric(utility_ego),
+        utility_alter_mean = as.numeric(utility_alter_mean),
+        utility_alter_sd = as.numeric(utility_alter_sd)
+      ) %>%
+      pivot_longer(cols = c( drop:add, utility_ego:utility_alter_sd )) 
+     
+    
+    plt <- actfit_long %>% ggplot(aes(x=value))+ 
+      # geom_density() + 
+      geom_histogram() +
+      facet_grid(dist ~ name, scales='free_x') + theme_bw() + 
+      ggtitle(sprintf('Utility Transition Paths: Actor %s, Step %s', i, step_id))
+    
+    pltlist[[ length(pltlist)+1 ]] <- plt
+    
+    # z <- apply(iland, 1, function(x) {
+    #   x <- plyr::count( x - bi_env_mat_step[i, ]) 
+    #   cnts <- merge(x$freq, data.frame(x=c())
+    #   names(cnts) <- x$x
+    #   return(cnts)
+    # }, simplify = T)
+    # 
+    # stringdist::stringdist( , , method='hamming')
+    
+    step_actor_key <- sprintf('%s|%s',step_id,i)
+    
+    statsl[[step_actor_key]] <- list(
+      actfit_long = actfit_long,
+      act_counterfacts = act_counterfacts,
+      plt = plt,
+      actor_id=i, chain_step_id = step_id,
+      strategy=as.factor(self$strat_1_coCovar[i])
+    )
+    
+    actor_strats <- env3$get_actor_strategies()
+    
+    utilist[[step_actor_key]] <- actfit_long %>% 
+      filter(name %in% c('utility_ego','utility_alter_mean')) %>%
+      mutate(actor_id=i, chain_step_id = step_id, strategy=as.factor(actor_strats[i]))
+      
+```
 
 
+```{r}
+heatmap(env1$fitness_landscape[1,,], col=heat.colors(50), scale = 'row')
+heatmap(env1$fitness_landscape[2,,], col=heat.colors(50), scale = 'row')
+```
+
+```{r}
+image(env1$fitness_landscape[2,,])
+
+image(t(apply(env1$fitness_landscape[2,,], 2, rev)), col=heat.colors(50), axes=FALSE)
+
+heatmap(env1$fitness_landscape[,,dim(env1$fitness_landscape)[3]-1], col=heat.colors(50), scale = 'row')
+```
 
 
-
+```{r}
+ggheatmap::ggheatmap(env1$fitness_landscape[,,dim(env1$fitness_landscape)[3]-1])
+```

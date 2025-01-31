@@ -35,6 +35,7 @@ SaomNkRSienaBiEnv_base <- R6Class(
     TIMESTAMP = NULL,
     SIM_NAME = NULL,
     UUID = NULL,
+    DIR_OUTPUT = NULL,
     #
     M = NULL,                # Number of actors
     N = NULL,                # Number of components
@@ -61,18 +62,34 @@ SaomNkRSienaBiEnv_base <- R6Class(
     bipartite_rsienaDV = NULL,
     social_rsienaDV = NULL,
     search_rsienaDV = NULL,
-    #
-    strat_1_coCovar = NULL,
+    ##----- COVARIATES -----------------
+    strat_1_coCovar = NULL,        ## constant strategy covariate  (M-vector)
     strat_2_coCovar = NULL,
     strat_3_coCovar = NULL,
     strat_4_coCovar = NULL,
-    strat_5_coCovar = NULL,
-    # strat_6_coCovar = NULL,
-    strat_mat_varCovar = NULL,
     #
-    component_1_coCovar = NULL,
+    strat_1_varCovar = NULL,        ## time-varying strategy covariate  (MxT matrix) for T periods
+    strat_2_varCovar = NULL,
+    #
+    strat_1_coDyadCovar = NULL,    ## constant social network covariate (MxM matrix)
+    strat_2_coDyadCovar = NULL,
+    #
+    strat_1_varDyadCovar = NULL,    ## time varying social network covariate (MxMxT array) for T periods
+    strat_2_varDyadCovar = NULL,
+    #
+    component_1_coCovar = NULL,     ## constant component covariate  (N-vector)
     component_2_coCovar = NULL,
+    #
+    component_1_varCovar = NULL,     ## time varying component covariate  (NxT matrix) for T periods
+    component_2_varCovar = NULL,
+    #
+    component_1_coDyadCovar = NULL,  ## constant interaction matrix covariate (NxN matrix)
+    component_2_coDyadCovar = NULL,
+    #
+    component_1_varDyadCovar = NULL,  ## time varying interaction matrix covariate (NxNxT array) for T periods
+    component_2_varDyadCovar = NULL,
     # component_3_coCovar = NULL,
+    ##------/end covariates ------------
     #
     plots = list(),
     multiwave_plots = list(),
@@ -140,6 +157,9 @@ SaomNkRSienaBiEnv_base <- R6Class(
       self$N <- config_environ_params[['N']]
       self$BI_PROB <- config_environ_params[['BI_PROB']]
       self$UUID <- UUIDgenerate(use.time = T)
+      self$DIR_OUTPUT <- ifelse(is.null(config_environ_params[['dir_output']]),
+                                getwd(),
+                                config_environ_params[['dir_output']])
       # self$P_change <- config_environ_params[['P_change']]
       #
       # self$bipartite_igraph <- self$generate_bipartite_igraph()
@@ -199,6 +219,10 @@ SaomNkRSienaBiEnv_base <- R6Class(
     
     # Generate a random bipartite network matrix
     random_bipartite_matrix = function(rand_seed = 123) {
+      ## If BI_PROB==1 or 0, return equivalent matrix (full or empty) 
+      if (self$BI_PROB %in% c(0, 1))
+        return(matrix(self$BI_PROB, nrow = self$M, ncol = self$N))
+      # Else sample random matrix
       set.seed(rand_seed)  # For reproducibility
       probs <- c( 1 - self$BI_PROB, self$BI_PROB )
       bipartite_matrix <- matrix(sample(0:1, self$M * self$N, replace = TRUE, prob = probs ),
@@ -402,6 +426,37 @@ SaomNkRSienaBiEnv_base <- R6Class(
                                          interaction1 = eff$interaction1,
                                          name = eff$dv_name, parameter = eff$parameter,  fix = eff$fix)
       }
+      ## DYADIC COVARIATE EFFECT
+      else if (eff$effect == 'XWX')
+      {
+        self$rsiena_effects <- includeEffects(self$rsiena_effects,  XWX, ## get network statistic function from effect name (character)
+                                              name = eff$dv_name, 
+                                              interaction1 = eff$interaction1,
+                                              fix = eff$fix)
+        self$rsiena_effects <- setEffect(self$rsiena_effects,  XWX, 
+                                         interaction1 = eff$interaction1,
+                                         name = eff$dv_name, parameter = eff$parameter,  fix = eff$fix)
+      }
+      # else if (eff$effect == 'XWX1')
+      # {
+      #   self$rsiena_effects <- includeEffects(self$rsiena_effects,  XWX1, ## get network statistic function from effect name (character)
+      #                                         name = eff$dv_name, 
+      #                                         interaction1 = eff$interaction1,
+      #                                         fix = eff$fix)
+      #   self$rsiena_effects <- setEffect(self$rsiena_effects,  XWX1, 
+      #                                    interaction1 = eff$interaction1,
+      #                                    name = eff$dv_name, parameter = eff$parameter,  fix = eff$fix)
+      # }
+      # else if (eff$effect == 'XWX2')
+      # {
+      #   self$rsiena_effects <- includeEffects(self$rsiena_effects,  XWX2, ## get network statistic function from effect name (character)
+      #                                         name = eff$dv_name, 
+      #                                         interaction1 = eff$interaction1,
+      #                                         fix = eff$fix)
+      #   self$rsiena_effects <- setEffect(self$rsiena_effects,  XWX2, 
+      #                                    interaction1 = eff$interaction1,
+      #                                    name = eff$dv_name, parameter = eff$parameter,  fix = eff$fix)
+      # }
       else 
       {
         ##
@@ -419,11 +474,13 @@ SaomNkRSienaBiEnv_base <- R6Class(
       xComponentDegree  <- colSums(bi_env_mat, na.rm=T)
       #
       # eff <- m1$rsiena_effects[m1$rsiena_effects$include, ]
-      efflist <- self$config_structure_model$dv_bipartite$effects
-      #
-      efflist <- c(efflist, self$config_structure_model$dv_bipartite$coCovars )
-      #
-      efflist <- c(efflist, self$config_structure_model$dv_bipartite$varCovars )
+      efflist <- c(
+        self$config_structure_model$dv_bipartite$effects,
+        self$config_structure_model$dv_bipartite$coCovars,
+        self$config_structure_model$dv_bipartite$varCovars,
+        self$config_structure_model$dv_bipartite$coDyadCovars,
+        self$config_structure_model$dv_bipartite$varDyadCovars
+      )
       #
       neffs <- length(efflist)
       ### empty matrix to hold actor network statistics
@@ -513,6 +570,14 @@ SaomNkRSienaBiEnv_base <- R6Class(
           component_weights_from_actor_stats <-  colSums(covarActorMat * bi_env_mat, na.rm=T)
           ## M-vector of actor sum of it's connected component weights (which are computed as the sum of the connected actor covariates)
           stat <- rowSums( bi_env_mat * component_weights_from_actor_stats, na.rm=T ) ##**vector element-wise multiplication by rows of covar matrix, or elements of covar array
+        }
+        else if (item$effect == 'XWX') ## interaction1 strat_coCovar
+        {
+          covar <- item$x  ## NxN matrix
+          ## MxM matrix of inter-actor connections weighted by component covarite matrix
+          interactor_cov_w <- bi_env_mat %*% covar %*% t(bi_env_mat)
+          ## covert to M-vector of actor attributes
+          stat <- rowSums( interactor_cov_w, na.rm=T ) ##**TODO: CHECK**
         }
         else
         {
