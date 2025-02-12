@@ -3,9 +3,9 @@ title: 'SaoMNK Tutorial: Generalizing NK Epistatic Interaction Fitness'
 author: "S. Downing"
 date: "`r Sys.Date()`"
 output:
-  pdf_document: default
   html_document:
     df_print: paged
+  pdf_document: default
 ---
 
 This project begins from the simple premise that the task of endogenizing the 
@@ -69,7 +69,7 @@ SaomNkRSienaBiEnv <- source(file.path(dir_r, 'SAOM_NK_R6_model.R'))$value
 ## default settings: Users do not change; TODO: implment within restricted class attributes
 DV_NAME <- 'self$bipartite_rsienaDV'
 #
-steps_per_actor <- 100
+steps_per_actor <- 50
 ```
 
 
@@ -81,7 +81,7 @@ steps_per_actor <- 100
 ```{r}
 #
 environ_params <- list(
-  M = 6,       ## Actors
+  M = 12,       ## Actors
   N = 12,       ## Components
   BI_PROB = 1, ## Environmental Density (DGP hyperparameter)
   component_matrix_start = 'rand', ##**TODO** Implement: 'rand','modular','semi-modular',...
@@ -189,11 +189,11 @@ structure_model <- list(
     varCovars = list(),
     ##**DYADIC CONSTANT COVARIATE EFFECTS -- EXOGENOUS INTERACTION MATRIX**
     coDyadCovars = list(
-      list(effect='XWX',   parameter= .1, dv_name=DV_NAME, fix=T,
+      list(effect='XWX',   parameter= .1, dv_name=DV_NAME, fix=T, nodeSet=c('COMPONENTS','COMPONENTS'),##if M=N, must provide nodeSet
            interaction1='self$component_1_coDyadCovar',
            x = component_int_mat ## component-[actor]-component dyads
       ) ,
-      list(effect='X',   parameter= 0, dv_name=DV_NAME, fix=T,
+      list(effect='X',   parameter= 0, dv_name=DV_NAME, fix=T, nodeSet=c('ACTORS','COMPONENTS'), ##if M=N, must provide nodeSet
            interaction1='self$component_2_coDyadCovar',
            x = dyad_cov_X ## deltas = changes of payoff contributions from each actor-component
       )
@@ -328,7 +328,7 @@ env1$plot_strategy_utility() +
 
 Time series is simulated decision steps.
 
-```{r,  fig.height=13, fig.width=10, fig.dpi=1000}
+```{r,  fig.height=13, fig.width=9, fig.dpi=900}
 ##
 env1$plot_utility_components(loess_span=0.25)
 ```
@@ -458,11 +458,11 @@ structure_model <- list(
     varCovars = list(),
     ##**DYADIC CONSTANT COVARIATE EFFECTS -- EXOGENOUS INTERACTION MATRIX**
     coDyadCovars = list(
-      list(effect='XWX',   parameter= .02, dv_name=DV_NAME, fix=T,
+      list(effect='XWX',   parameter= .02, dv_name=DV_NAME, fix=T, nodeSet=c('COMPONENTS','COMPONENTS'),##if M=N, must provide nodeSet
            interaction1='self$component_1_coDyadCovar',
            x = component_int_mat ## component-[actor]-component dyads
       ) ,
-      list(effect='X',   parameter= 0, dv_name=DV_NAME, fix=T,
+      list(effect='X',   parameter= 0, dv_name=DV_NAME, fix=T, nodeSet=c('ACTORS','COMPONENTS'), ##if M=N, must provide nodeSet
            interaction1='self$component_2_coDyadCovar',
            x = dyad_cov_X ## deltas = changes of payoff contributions from each actor-component
       )
@@ -470,7 +470,7 @@ structure_model <- list(
      ##**DYADIC TIME-VARYING COVARIATE EFFECTS -- DYNAMIC INTERACTION MATRIX**
     varDyadCovars = list(),
     interactions = list(
-      list(effect='egoX|XWX',   parameter= -.01, dv_name=DV_NAME, fix=T,
+      list(effect='egoX|XWX',   parameter= -.001, dv_name=DV_NAME, fix=T,
            interaction1='self$strat_1_coCovar',
            interaction2='self$component_1_coDyadCovar'
       ),
@@ -574,7 +574,7 @@ env2$plot_strategy_utility() +
 
 Time series is simulated decision steps.
 
-```{r,  fig.height=10, fig.width=8, fig.dpi=800}
+```{r,  fig.height=13, fig.width=9, fig.dpi=900}
 ##
 env2$plot_utility_components(loess_span=0.35)
 ```

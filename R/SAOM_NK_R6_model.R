@@ -163,23 +163,18 @@ SaomNkRSienaBiEnv <- R6Class(
         for (i in 1:ncompo_coDyadCovar) {
           property <- sprintf('component_%s_coDyadCovar', i)
           eff <- structure_model$dv_bipartite$coDyadCovar[[ component_coDyadCovar_ids[i] ]]
-          print(eff)
-          if ( dim(eff$x)[1] == self$M & 
-               dim(eff$x)[2] == self$M )
-          {
-            self[[property]] <- coDyadCovar(eff$x, nodeSet = c('ACTORS','ACTORS'))
-          } else if ( dim(eff$x)[1]==self$N & 
-                      dim(eff$x)[2] == self$N )
-          {
-            self[[property]] <- coDyadCovar(eff$x, nodeSet = c('COMPONENTS','COMPONENTS'))
-          } else if ( dim(eff$x)[1]==self$M & 
-                      dim(eff$x)[2] == self$N  ) 
-          {
-            self[[property]] <- coDyadCovar(eff$x, nodeSet = c('ACTORS','COMPONENTS'))
-          } else 
-          {
-            stop(sprintf('dimensions x[%s,%s] not supported.', dim(eff$x)[1],dim(eff$x)[2] ) )
+          # print(eff)
+          if ( !is.null(eff$nodeSet) ) {
+            ## A. user provides nodeSet
+            nodeSet <- eff$nodeSet
+          } else if ( self$M != self$N  &  all(c(self$M, self$N) == dim(eff$x)) ) {
+            ## B. different M,N dimensions reveals nodeSet
+            nodeSet <- if (dim(eff$x)[1]==self$M & dim(eff$x)[2]==self$N){c('ACTORS','COMPONENTS')} else {c('COMPONENTS','COMPONENTS')}
+          } else {
+            stop(sprintf('Cannot distinguish actors from components for dimensions M=%s,N=%s; provide nodeSet for effect %s.',
+                         self$M, self$N, eff$effect))
           }
+          self[[property]] <- coDyadCovar(eff$x, nodeSet = nodeSet)
           input_varlist[[sprintf('self$%s',property)]] <-  self[[property]]
         }
       }
@@ -220,22 +215,21 @@ SaomNkRSienaBiEnv <- R6Class(
       if (nstrat_coDyadCovar) {
         for (i in 1:nstrat_coDyadCovar) {
           property <- sprintf('strat_%s_coDyadCovar', i)
-          eff <- structure_model$dv_bipartite$coDyadCovar[[ strat_coDyadCovar_ids[i] ]]
-          if ( dim(eff$x)[1] == self$M & 
-               dim(eff$x)[2] == self$M ) {
-            self[[property]] <- coDyadCovar(eff$x, nodeSet = c('ACTORS','ACTORS'))
-          } else if ( dim(eff$x)[1]==self$N & 
-                      dim(eff$x)[2] == self$N ) {
-            self[[property]] <- coDyadCovar(eff$x, nodeSet = c('COMPONENTS','COMPONENTS'))
-          } else if ( dim(eff$x)[1]==self$M & 
-                      dim(eff$x)[2] == self$N  ) {
-            self[[property]] <- coDyadCovar(eff$x, nodeSet = c('ACTORS','COMPONENTS'))
+          eff <- structure_model$dv_bipartite$coDyadCovar[[ component_coDyadCovar_ids[i] ]]
+          # print(eff)
+          if ( !is.null(eff$nodeSet) ) {
+            ## A. user provides nodeSet
+            nodeSet <- eff$nodeSet
+          } else if ( self$M != self$N  &  all(c(self$M, self$N) == dim(eff$x)) ) {
+            ## B. different M,N dimensions reveals nodeSet
+            nodeSet <- if (dim(eff$x)[1]==self$M & dim(eff$x)[2]==self$N){c('ACTORS','COMPONENTS')} else {c('ACTORS','ACTORS')}
           } else {
-            stop(sprintf('dimensions x[%s,%s] not supported.', dim(eff$x)[1],dim(eff$x)[2] ) )
+            stop(sprintf('Cannot distinguish actors from components for dimensions M=%s,N=%s; provide nodeSet for effect %s.',
+                         self$M, self$N, eff$effect))
           }
+          self[[property]] <- coDyadCovar(eff$x, nodeSet = nodeSet)
           input_varlist[[sprintf('self$%s',property)]] <-  self[[property]]
         }
-        
       }
       if (nstrat_varDyadCovar) {
         for (i in 1:nstrat_varDyadCovar) {
@@ -938,7 +932,7 @@ SaomNkRSienaBiEnv <- R6Class(
       return(effects)
     },
     
-    get_theta_matrix = function(input_effs) {
+    get_theta_matrix = function(input_effs, iterations) {
       #
       effs <- as.data.frame(self$rsiena_effects[self$rsiena_effects$include, ])
       ## add short name for convenience as effect name
@@ -969,6 +963,17 @@ SaomNkRSienaBiEnv <- R6Class(
     
     
     ############################################################################
+    # # structure_model 
+    # array_bi_net=NULL ## starting matrices for the simulation
+    # theta_matrix=NULL ## variable theta matrix replaces parameter values in structure_model
+    # iterations=1000   ## replaced by nrow(theta_matrix) if theta_matrix is not null
+    # run_seed=123 
+    # process_chain=TRUE
+    # get_eff_doc=FALSE
+    # plot_save=FALSE
+    # return_plot=FALSE
+    # verbose=TRUE
+    # digits=3
     ##**TODO: check**
     search_rsiena = function(structure_model, 
                              array_bi_net=NULL, ## starting matrices for the simulation
@@ -1022,7 +1027,7 @@ SaomNkRSienaBiEnv <- R6Class(
       
       ##---------- III. SET THETA MATRIX IF NULL  -----------------------------
       if (any(is.null(theta_matrix))) {
-        theta_matrix <- self$get_theta_matrix(input_effs)
+        theta_matrix <- self$get_theta_matrix(input_effs, iterations)
       }
       #
       if(verbose) {

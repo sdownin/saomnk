@@ -11,7 +11,8 @@ R/*.pdf
 R/*.log
 R/*.log.txt
 
-
+#
+R/_test_tutorial_nb*.txt
 
 
 # Ignore all compressed file types
