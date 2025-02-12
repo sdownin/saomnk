@@ -69,7 +69,7 @@ SaomNkRSienaBiEnv <- source(file.path(dir_r, 'SAOM_NK_R6_model.R'))$value
 ## default settings: Users do not change; TODO: implment within restricted class attributes
 DV_NAME <- 'self$bipartite_rsienaDV'
 #
-steps_per_actor <- 10
+steps_per_actor <- 20
 ```
 
 
@@ -81,7 +81,7 @@ steps_per_actor <- 10
 ```{r}
 #
 environ_params <- list(
-  M = 18,       ## Actors
+  M = 12,       ## Actors
   N = 9,       ## Components
   BI_PROB = 0, ## Environmental Density (DGP hyperparameter)
   component_matrix_start = 'rand', ##**TODO** Implement: 'rand','modular','semi-modular',...
@@ -103,7 +103,7 @@ library(Matrix)  # For block diagonal matrices
 create_block_diag <- function(N, B) {
   # Determine the approximate block size
   block_sizes <- rep(N %/% B, B)  # Equal-sized blocks
-  block_sizes[1:(N %% B)] <- if (N %% 2 == 0) {
+  block_sizes[1:(N %% B)] <- if (N %% B == 0) {
     block_sizes[1:(N %% B)]   # Adjust for remainder
   } else {
     block_sizes[1:(N %% B)] + 1
@@ -143,6 +143,19 @@ component_payoffs <-  runif(environ_params$N, min = 0, max = 1)
 ## 2. Strategies sets the objective function as a linear combination of network stats across DVs
 #
 actor_strats_list <- lapply(strategies, function(strat) rep(strat,  environ_params$M/length(strat)) )
+
+component_int_mat <- create_block_diag(environ_params$N, round(environ_params$N/3))
+
+# dyad_cov_XWX <- ( outer(component_payoffs, component_payoffs, '*') * 
+#     create_block_diag(environ_params$N, round(environ_params$N/3))
+# )
+
+dyad_cov_X <- matrix(runif(n = environ_params$N*environ_params$M, min = 0, max= 1), nrow=environ_params$M)
+# dyad_cov_X <- matrix(runif(environ_params$N*environ_params$M) - runif(environ_params$N*environ_params$M), 
+#                      nrow=environ_params$M) 
+
+# dyad_cov_XWX_X <- t( dyad_cov_XWX %*% t(dyad_cov_X) )
+
 #
 structure_model <- list(
   dv_bipartite = list(
@@ -155,32 +168,46 @@ structure_model <- list(
     ## COVARIATE EFFECTS
     coCovars = list( 
       ##** COMPONENTS : MONADIC CONSTANT COVARIATE EFFECTS **##
-      list(effect='altX',   parameter= 1, dv_name=DV_NAME, fix=T,
-           interaction1='self$component_1_coCovar', x = component_payoffs 
-      ),
+      # list(effect='altX',   parameter= 0, dv_name=DV_NAME, fix=T,
+      #      interaction1='self$component_1_coCovar', x = component_payoffs 
+      # ),
+      # list(effect='outActX',   parameter= 0, dv_name=DV_NAME, fix=T,
+      #      interaction1='self$component_1_coCovar', x = component_payoffs 
+      # ),
       ##** STRATEGIES : MONADIC CONSTANT COVARIATE EFFECTS **##
-      list(effect='egoX',   parameter= .1,  dv_name=DV_NAME, fix=T,
+      list(effect='egoX',   parameter= 0,  dv_name=DV_NAME, fix=T,
            interaction1='self$strat_1_coCovar',   x = actor_strats_list[[1]] 
       ), #interaction1 = NULL
-      list(effect='inPopX', parameter= .1,  dv_name=DV_NAME, fix=T,
+      list(effect='inPopX', parameter= 0,  dv_name=DV_NAME, fix=T,
            interaction1='self$strat_2_coCovar',  x = actor_strats_list[[2]] 
-      )
+      ) #,
+      # list(effect='totInDist2', parameter= 0,  dv_name=DV_NAME, fix=T,
+      #      interaction1='self$strat_3_coCovar',  x = (actor_strats_list[[1]] - actor_strats_list[[2]] )
+      # )
     ),
     ##**MONADIC TIME-VARYING COVARIATE EFFECTS -- DYNAMIC STRATEGY PROGRAMS**
     varCovars = list(),
     ##**DYADIC CONSTANT COVARIATE EFFECTS -- EXOGENOUS INTERACTION MATRIX**
     coDyadCovars = list(
-       list(effect='XWX',   parameter= 1, dv_name=DV_NAME, fix=T,
-           interaction1='self$component_1_coDyadCovar', 
-           x = create_block_diag(environ_params$N, round(environ_params$N/3))
+      list(effect='XWX',   parameter= 1, dv_name=DV_NAME, fix=T,
+           interaction1='self$component_1_coDyadCovar',
+           x = component_int_mat ## component-[actor]-component dyads
+      ) ,
+      list(effect='X',   parameter= 1, dv_name=DV_NAME, fix=T,
+           interaction1='self$component_2_coDyadCovar',
+           x = dyad_cov_X ## deltas = changes of payoff contributions from each actor-component
       )
     ),
      ##**DYADIC TIME-VARYING COVARIATE EFFECTS -- DYNAMIC INTERACTION MATRIX**
     varDyadCovars = list(),
     interactions = list(
-      list(effect='altX|XWX',   parameter= 1, dv_name=DV_NAME, fix=T,
-       interaction1='self$component_1_coCovar', 
-       interaction2='self$component_1_coDyadCovar'
+      list(effect='egoX|XWX',   parameter= 0, dv_name=DV_NAME, fix=T,
+           interaction1='self$strat_1_coCovar',
+           interaction2='self$component_1_coDyadCovar'
+      ),
+      list(effect='inPopX|X',   parameter= 0, dv_name=DV_NAME, fix=T,
+           interaction1='self$strat_2_coCovar',
+           interaction2='self$component_2_coDyadCovar'
       )
     )
   )
@@ -197,7 +224,7 @@ env1$preview_effects(structure_model, filter=FALSE)
 
 ```{r}
 # ## Uncomment for HTML output with filterable data table
-# env1$preview_effects(structure_model, filter=TRUE)
+env1$preview_effects(structure_model, filter=TRUE)
 ```
 
 
@@ -237,7 +264,8 @@ environment (actors and components)
 
 ```{r, fig.height=5, fig.width=11}
 # snapshot_ids <- round( seq(1, dim(env1$bi_env_arr)[3], length=3 ) )
-snapshot_ids <- c(1, 1+ (1:3)*env1$M)
+# snapshot_ids <- c(1, 1+ (1:6)*env1$M)
+snapshot_ids <- c(1, (1:8)*10, dim(env1$bi_env_arr)[3]  )
 for (i in 1:length(snapshot_ids)) {
   step <- snapshot_ids[ i ]
   mat  <- env1$bi_env_arr[,,step]
@@ -296,9 +324,9 @@ env1$plot_actor_utility() +
 
 Time series is simulated decision steps.
 
-```{r,  fig.height=11, fig.width=8, fig.dpi=800}
+```{r,  fig.height=13, fig.width=10, fig.dpi=1000}
 ##
-env1$plot_utility_components(loess_span=0.35)
+env1$plot_utility_components(loess_span=0.25)
 ```
 
 
@@ -326,20 +354,20 @@ env1$compute_fitness_landscape(component_coCovar=NA)
 
 ```{r}
 ## Use the component values as the means of random noise for different payoff combinations 
-env1$compute_fitness_landscape(component_coCovar=1)
+# env1$compute_fitness_landscape(component_coCovar=1)
 ```
 
 
 
 ```{r}
 ## LOWER SD of component values noise for different payoff combinations 
-env1$compute_fitness_landscape(component_coCovar=1, component_value_sd=0.01)
+# env1$compute_fitness_landscape(component_coCovar=1, component_value_sd=0.01)
 ```
 
 
 ```{r}
 ## HIGHER SD of component values noise for different payoff combinations 
-env1$compute_fitness_landscape(component_coCovar=1, component_value_sd=0.5)
+# env1$compute_fitness_landscape(component_coCovar=1, component_value_sd=0.5)
 ```
 
 
@@ -372,7 +400,7 @@ Reuse existing `environ_config`
 SAOM Objective Function serves as the stochastic actor's utility function for strategic search. 
 
 ```{r}
-#
+
 strategies <- list(
   egoX   =   c(-1, 0, 1),
   inPopX =   c( 1, 0, -1)
@@ -384,47 +412,71 @@ component_payoffs <-  runif(environ_params$N, min = 0, max = 1)
 ## 2. Strategies sets the objective function as a linear combination of network stats across DVs
 #
 actor_strats_list <- lapply(strategies, function(strat) rep(strat,  environ_params$M/length(strat)) )
-#
-nsteps <- env1$M * steps_per_actor ## keep from above
+
+component_int_mat <- create_block_diag(environ_params$N, round(environ_params$N/3))
+
+# dyad_cov_XWX <- ( outer(component_payoffs, component_payoffs, '*') * 
+#     create_block_diag(environ_params$N, round(environ_params$N/3))
+# )
+dyad_cov_X <- matrix(runif(n = environ_params$N*environ_params$M, min = 0, max= 1), nrow=environ_params$M) 
+# dyad_cov_XWX_X <- t( dyad_cov_XWX %*% t(dyad_cov_X) )
+
 #
 structure_model <- list(
   dv_bipartite = list(
     name = 'self$bipartite_rsienaDV',
     effects = list( ##**STRUCTURAL EFFECTS -- dyadic/network endogeneity sources**
-      list(effect='density', parameter= -.5, fix=T, dv_name=DV_NAME), ##interaction1 = NULL
-      list(effect='inPop',   parameter= .1, fix=T, dv_name=DV_NAME), #interaction1 = NUL
-      list(effect='outAct',  parameter= .1, fix=T, dv_name=DV_NAME)
+      list(effect='density', parameter= 0, dv_name=DV_NAME, fix=T ), ##interaction1 = NULL
+      list(effect='inPop',   parameter= 0, dv_name=DV_NAME, fix=T ), #interaction1 = NUL
+      list(effect='outAct',  parameter= 0, dv_name=DV_NAME, fix=T )
     ),
     ## COVARIATE EFFECTS
     coCovars = list( 
       ##** COMPONENTS : MONADIC CONSTANT COVARIATE EFFECTS **##
-      list(effect='altX',   parameter= 1, dv_name=DV_NAME, fix=T,
-           interaction1='self$component_1_coCovar', x = component_payoffs 
-      ),
+      # list(effect='altX',   parameter= 0, dv_name=DV_NAME, fix=T,
+      #      interaction1='self$component_1_coCovar', x = component_payoffs 
+      # ),
+      # list(effect='outActX',   parameter= 0, dv_name=DV_NAME, fix=T,
+      #      interaction1='self$component_1_coCovar', x = component_payoffs 
+      # ),
       ##** STRATEGIES : MONADIC CONSTANT COVARIATE EFFECTS **##
-      list(effect='egoX',   parameter= .1,  dv_name=DV_NAME, fix=T,
+      list(effect='egoX',   parameter= 0,  dv_name=DV_NAME, fix=T,
            interaction1='self$strat_1_coCovar',   x = actor_strats_list[[1]] 
       ), #interaction1 = NULL
-      list(effect='inPopX', parameter= .1,  dv_name=DV_NAME, fix=T,
+      list(effect='inPopX', parameter= 0,  dv_name=DV_NAME, fix=T,
            interaction1='self$strat_2_coCovar',  x = actor_strats_list[[2]] 
-      )
+      ) #,
+      # list(effect='totInDist2', parameter= 0,  dv_name=DV_NAME, fix=T,
+      #      interaction1='self$strat_3_coCovar',  x = (actor_strats_list[[1]] - actor_strats_list[[2]] )
+      # )
     ),
     ##**MONADIC TIME-VARYING COVARIATE EFFECTS -- DYNAMIC STRATEGY PROGRAMS**
     varCovars = list(),
     ##**DYADIC CONSTANT COVARIATE EFFECTS -- EXOGENOUS INTERACTION MATRIX**
     coDyadCovars = list(
-       list(effect='XWX',   parameter= 1, dv_name=DV_NAME, fix=T,
-           interaction1='self$component_1_coDyadCovar', 
-           x = create_block_diag(environ_params$N, 2)
+      list(effect='XWX',   parameter= 1, dv_name=DV_NAME, fix=T,
+           interaction1='self$component_1_coDyadCovar',
+           x = component_int_mat ## component-[actor]-component dyads
+      ) ,
+      list(effect='X',   parameter= 1, dv_name=DV_NAME, fix=T,
+           interaction1='self$component_2_coDyadCovar',
+           x = dyad_cov_X ## deltas = changes of payoff contributions from each actor-component
       )
     ),
      ##**DYADIC TIME-VARYING COVARIATE EFFECTS -- DYNAMIC INTERACTION MATRIX**
     varDyadCovars = list(),
-    interactions = list()
+    interactions = list(
+      list(effect='egoX|XWX',   parameter= 1, dv_name=DV_NAME, fix=T,
+           interaction1='self$strat_1_coCovar',
+           interaction2='self$component_1_coDyadCovar'
+      ),
+      list(effect='inPopX|X',   parameter= 1, dv_name=DV_NAME, fix=T,
+           interaction1='self$strat_2_coCovar',
+           interaction2='self$component_2_coDyadCovar'
+      )
+    )
   )
 )
-
-
 ```
 
 
@@ -432,8 +484,9 @@ structure_model <- list(
 ## 2.3 Run RSiena Search Process
 
 ```{r}
+env2 <- SaomNkRSienaBiEnv$new(environ_params)
 ## Run Rsiena search using variable parameters in theta_matrix
-env1$search_rsiena(
+env2$search_rsiena(
   structure_model,
   iterations = env1$M * steps_per_actor,
   digits = 4,
@@ -453,11 +506,12 @@ environment (actors and components)
 
 ```{r, fig.height=5, fig.width=11}
 # snapshot_ids <- round( seq(1, dim(env1$bi_env_arr)[3], length=3 ) )
-snapshot_ids <- c(1, 1+ (1:3)*env1$M)
+# snapshot_ids <- c(1, 1+ (1:8)*env1$M)
+snapshot_ids <- c(1, (1:8)*10, dim(env1$bi_env_arr)[3]  )
 for (i in 1:length(snapshot_ids)) {
   step <- snapshot_ids[ i ]
-  mat <- env1$bi_env_arr[,,step]
-  env1$plot_bipartite_system_from_mat(mat, step)
+  mat <- env2$bi_env_arr[,,step]
+  env2$plot_bipartite_system_from_mat(mat, step)
 }
 ```
 
@@ -470,7 +524,7 @@ Time series is simulated decision steps.
 
 ```{r, fig.height=6, fig.width=6.5, fig.dpi=800}
 ##
-env1$plot_actor_degrees(loess_span = 0.25)
+env2$plot_actor_degrees(loess_span = 0.25)
 ```
 
 
@@ -479,7 +533,7 @@ env1$plot_actor_degrees(loess_span = 0.25)
 
 ```{r, fig.height=6, fig.width=6.5, fig.dpi=800}
 ##
-env1$plot_component_degrees(loess_span = 0.35)
+env2$plot_component_degrees(loess_span = 0.35)
 
 ```
 
@@ -490,7 +544,7 @@ env1$plot_component_degrees(loess_span = 0.35)
 
 ```{r, warning=FALSE, echo=FALSE}
 
-env1$plot_strategy_utility() + 
+env2$plot_strategy_utility() + 
   ggtitle('Utility by Strategy\nLoess Curves vs. Periodwise Avg. in Black')
 
 ```
@@ -501,7 +555,7 @@ env1$plot_strategy_utility() +
 
 ```{r, warning=FALSE, echo=FALSE}
 
-env1$plot_actor_utility() + 
+env2$plot_actor_utility() + 
   ggtitle('Utility by Actor\nLoess Curves vs. Periodwise Avg. in Black')
 
 ```
@@ -514,7 +568,7 @@ Time series is simulated decision steps.
 
 ```{r,  fig.height=10, fig.width=8, fig.dpi=800}
 ##
-env1$plot_utility_components(loess_span=0.35)
+env2$plot_utility_components(loess_span=0.35)
 ```
 
 
@@ -523,7 +577,7 @@ env1$plot_utility_components(loess_span=0.35)
 ## 2.10 Plot Actor Utility Timeseries and Distribution by Strategy
 
 ```{r, fig.height=6, fig.width=8, fig.dpi=800}
-env1$plot_actor_utility_strategy_summary()
+env2$plot_actor_utility_strategy_summary()
 ```
 
 
@@ -537,45 +591,45 @@ Number of changes to component ties as distance from counterfactual affiliation 
 
 ```{r}
 ## Use random uniform values for all combinations like traditional NK model
-env1$compute_fitness_landscape(component_coCovar=NA)
+env2$compute_fitness_landscape(component_coCovar=NA)
 ```
 
 
 ```{r}
 ## Use the component values as the means of random noise for different payoff combinations 
-env1$compute_fitness_landscape(component_coCovar=1)
+# env2$compute_fitness_landscape(component_coCovar=1)
 ```
 
 
 
 ```{r}
 ## LOWER SD of component values noise for different payoff combinations 
-env1$compute_fitness_landscape(component_coCovar=1, component_value_sd=0.01)
+# env2$compute_fitness_landscape(component_coCovar=1, component_value_sd=0.01)
 ```
 
 
 ```{r}
 ## HIGHER SD of component values noise for different payoff combinations 
-env1$compute_fitness_landscape(component_coCovar=1, component_value_sd=0.5)
+# env2$compute_fitness_landscape(component_coCovar=1, component_value_sd=0.5)
 ```
 
 ```{r}
 ## 1st and last state of the bipartite matrix system
 # dim(env1$fitness_landscape)
 
-hist(env1$fitness_landscape[ 1, , dim(env1$fitness_landscape)[3]-1 ],
+hist(env2$fitness_landscape[ 1, , dim(env2$fitness_landscape)[3]-1 ],
      main='Fitness Distribution of Landscape Draw 1', xlab='Fitness')
 ```
 
 ```{r}
 
-hist(env1$fitness_landscape[ 1, , dim(env1$fitness_landscape)[3] ],
+hist(env2$fitness_landscape[ 1, , dim(env2$fitness_landscape)[3] ],
      main='Peaks Distribution over configurations in Landscape Draw 1', xlab='Peak')
 ```
 
 
 ```{r}
-env1$fitness_landscape[1,,]
+env2$fitness_landscape[1,,]
 
 
 
@@ -586,14 +640,16 @@ env1$fitness_landscape[1,,]
 
 
 ```{r, fig.height=8, fig.width=10, fig.dpi=800}
-    
-self <- env1
+      
+  i <- 1
+
+self <- env2
 
 theta <- self$rsiena_model$thetaUsed
 
 # step_ids <- round(c(1,8,64,512, self$rsiena_model$n3/2, self$rsiena_model$n3))
 acpds <- seq(1, nrow(theta), by= self$M )
-step_ids <- c(acpds[1:min(3, length(acpds))])
+step_ids <- acpds[c(1:min(3, length(acpds)-1),length(acpds))]
 #
 step_id <- step_ids[ 2 ]
 
@@ -603,8 +659,7 @@ step_id <- step_ids[ 2 ]
   bi_env_mat_step <- self$bi_env_arr[, , step_id]
   
   act_counterfacts <- list()
-  
-  i <- 1
+
   
   # for (i in 1:min(3, self$M)) {
     cat(sprintf(' %s ', i))
@@ -665,6 +720,7 @@ step_id <- step_ids[ 2 ]
     #   nmax = nmax
     # )
     
+  
     ## distances of each counterfactual configuration 
     actor_i <- i
     start_actor_config <- bi_env_mat_step[actor_i, ]
@@ -681,7 +737,8 @@ step_id <- step_ids[ 2 ]
           config_str = paste( iland[config_i, ], collapse = '|'),
           config_dist_str=paste(x, collapse = '|'), 
           fitness=fit, 
-          utility=util
+          utility=util,
+          degree= sum(as.numeric(start_actor_config))
           )
       })) %>% tidyr::as_tibble() %>% 
       mutate(start_str=start_actor_config_str, 
@@ -691,303 +748,371 @@ step_id <- step_ids[ 2 ]
              dist = as.numeric(dist),
              drop = as.numeric(drop),
              nochange = as.numeric(nochange),
-             add = as.numeric(add)
-             )
+             add = as.numeric(add),
+             degree_high = as.numeric(degree) > median(as.numeric(degree)),
+             high_dist = dist > median(dist, na.rm=T)
+             ) 
+z$repertoire <- apply(z[,c('add','drop','dist','degree_high')], 1, function(x)paste(x, collapse = '|'))
+z$add_by_dist <- apply(z[,c('add','dist')], 1, function(x)paste(x, collapse = '|'))
+z$add_by_high_dist <- apply(z[,c('add','high_dist')], 1, function(x)paste(x, collapse = '|'))
+    
+    
 
+plt <- z %>% ggplot(aes(x=utility, y=fitness, color=factor(repertoire))) +
+  geom_smooth(alpha=.1, method='lm') +
+  geom_point(alpha=.2) +
+  facet_grid(factor(dist) ~ . , scales='free_y') +
+  geom_vline(aes(xintercept = mean, color=factor(dist)), 
+             data=z%>%group_by(dist)%>%summarize(mean=mean(utility))) +
+# facet_grid(.~dist) +
+  theme_bw() + 
+  ggtitle(sprintf('Actor %s Step %s Fitness as function of Utility\nby configuration distance (number of tie changes from current config.)', actor_i, step_id))
+
+print(plt)
+
+(fita <- lm(fitness ~ utility*factor(add), data=z  ))
+print(summary(fita))
+(fitd <- lm(fitness ~ utility*factor(drop), data=z  ))
+print(summary(fitd))
+#
+(fitah <- lm(fitness ~ utility*factor(add), data=z %>%filter(dist > median(dist, na.rm=T)) ))
+print(summary(fitah))
+#
+(fital <- lm(fitness ~ utility*factor(add), data=z %>%filter(dist <= median(dist, na.rm=T)) ))
+print(summary(fital))
+#
+(fitdh <- lm(fitness ~ utility*factor(drop), data=z %>%filter(dist > median(dist, na.rm=T)) ))
+print(summary(fitdh))
+#
+(fitdl <- lm(fitness ~ utility*factor(drop), data=z %>%filter(dist <= median(dist, na.rm=T)) ))
+print(summary(fitdl))
+write.csv(z, file=sprintf('test_utility_fitness2_step_id%s.csv',step_id), row.names=F)
+```
+
+
+```{r, fig.height=8, fig.width=10, fig.dpi=800}
+       
+  i <- 2
+
+self <- env2
+
+theta <- self$rsiena_model$thetaUsed
+
+# step_ids <- round(c(1,8,64,512, self$rsiena_model$n3/2, self$rsiena_model$n3))
+acpds <- seq(1, nrow(theta), by= self$M )
+step_ids <- acpds[c(1:min(3, length(acpds)-1),length(acpds))]
+#
+step_id <- step_ids[ 2 ]
+
+  # step_id <- 1
+  cat(sprintf('\nstep %s: actors ', step_id))
+  
+  bi_env_mat_step <- self$bi_env_arr[, , step_id]
+  
+  act_counterfacts <- list()
+
+  
+  # for (i in 1:min(3, self$M)) {
+    cat(sprintf(' %s ', i))
+    
+    
+    ##**ACTOR i DECISION PERSPECTIVE** 0000000000000000000000000000000000
+    
+    ##**TODO**
+    ## ALL actor-component counterfactual configuations for Actor i  (2^N rows by N cols)
+    iland <- expand.grid(lapply(1:self$N, function(x) 0:1 ))
+    iland_config_step_row_id <- which(apply(iland, 1, function(x) all(x == bi_env_mat_step[i,]) ))
+    
+    fit_vec <- env1$fitness_landscape[1, , 1 + 2*env1$N]
+    
+    ## fitness
+    fitness_land1 <- env1$fitness_landscape[1, , 1:env1$N]
+    #
+    if ( ! all( iland == fitness_land1) ) {
+      stop('fitness landscape configurations do not match iland configurations')
+    }
+    
+    
+    
+    ##**TODO**
+    ##**TODO** COMBINE utility and 'fitness' measures in dataframe by configuration with distance from actor's current configuration
+    ##*##**TODO**
+    ##**TODO**
+    ##**TODO  CHANGE TO ACTOR-SPECIFIC LANDSCAPES **
+    tmpmat <- bi_env_mat_step
+    ## ifit dimensions [ M, 2^N ]
+    iutil <- apply(iland, 1, function(x){
+      tmpmat[i,] <- x  ## set counterfactual actor-component configuration
+      config_util <- if('matrix' %in% class(theta)) {
+        self$get_struct_mod_stats_mat_from_bi_mat( tmpmat ) %*% theta[step_id,] ## variable thetas
+      } else {
+        self$get_struct_mod_stats_mat_from_bi_mat( tmpmat ) %*% theta   ## fixed thetas
+      }
+      return( config_util ) ## compute utility vector
+    }) 
+    
+   
+    # plot(ifit[actor_i, ])
+    
+    # apply
+    
+    # ids.max <- which(ifit == max(ifit), arr.ind = TRUE) 
+    # fits.max <- ifit[ ids.max ]
+    # nmax <- length(fits.max)
+    
+    # ifit
+    
+    # ids.max[1,]
+    
+    # act_counterfacts[[i]] <- list(
+    #   ifit = ifit, #Given all other ties, Actor i's configurations applied to utility func for all actors
+    #   ids.max = ids.max,
+    #   fits.max = fits.max,
+    #   nmax = nmax
+    # )
+    
+  
+    ## distances of each counterfactual configuration 
+    actor_i <- i
+    start_actor_config <- bi_env_mat_step[actor_i, ]
+    start_actor_config_str <- paste(start_actor_config, collapse = '|')
+    dist_counterfac <- iland - matrix( rep(start_actor_config, 2^self$N), byrow=T, ncol=self$N)
+    z <- t(sapply( 1:nrow(dist_counterfac),  function(config_i) {
+        x <- dist_counterfac[config_i,  ]   ## dist_counterfac[MxN]
+        util <- iutil[actor_i , config_i]  ## iutil[MxN]
+        fit <- fit_vec[config_i]
+        c(dist=sum(x!=0),
+          drop=sum(x==-1), 
+          nochange=sum(x==0),
+          add=sum(x==1), 
+          config_str = paste( iland[config_i, ], collapse = '|'),
+          config_dist_str=paste(x, collapse = '|'), 
+          fitness=fit, 
+          utility=util,
+          degree= sum(as.numeric(start_actor_config))
+          )
+      })) %>% tidyr::as_tibble() %>% 
+      mutate(start_str=start_actor_config_str, 
+             chain_step_id=step_id,
+             fitness = as.numeric(fitness),
+             utility = as.numeric(utility),
+             dist = as.numeric(dist),
+             drop = as.numeric(drop),
+             nochange = as.numeric(nochange),
+             add = as.numeric(add),
+             degree_high = as.numeric(degree) > median(as.numeric(degree)),
+             high_dist = dist > median(dist, na.rm=T)
+             ) 
+z$repertoire <- apply(z[,c('add','drop','dist','degree_high')], 1, function(x)paste(x, collapse = '|'))
+z$add_by_dist <- apply(z[,c('add','dist')], 1, function(x)paste(x, collapse = '|'))
+z$add_by_high_dist <- apply(z[,c('add','high_dist')], 1, function(x)paste(x, collapse = '|'))
+z$add_drop_dist <- apply(z[,c('add','drop','dist')], 1, function(x)paste(x, collapse = '|'))
+    
+
+plt <- z %>% ggplot(aes(x=utility, y=fitness, color=factor(add_drop_dist))) +
+  geom_smooth(alpha=.1, method='lm') +
+  geom_point(alpha=.2) +
+  facet_grid(factor(dist) ~ . , scales='free_y') +
+  geom_vline(aes(xintercept = mean), 
+             data=z%>%group_by(dist)%>%summarize(mean=mean(utility))) +
+# facet_grid(.~dist) +
+  theme_bw() + 
+    ggtitle(sprintf('Actor %s Step %s Fitness as function of Utility\nby configuration distance (number of tie changes from current config.)', actor_i, step_id))
+
+print(plt)
+
+(fita <- lm(fitness ~ utility*factor(add), data=z  ))
+print(summary(fita))
+(fitd <- lm(fitness ~ utility*factor(drop), data=z  ))
+print(summary(fitd))
+#
+(fitah <- lm(fitness ~ utility*factor(add), data=z %>%filter(dist > median(dist, na.rm=T)) ))
+print(summary(fitah))
+#
+(fital <- lm(fitness ~ utility*factor(add), data=z %>%filter(dist <= median(dist, na.rm=T)) ))
+print(summary(fital))
+#
+(fitdh <- lm(fitness ~ utility*factor(drop), data=z %>%filter(dist > median(dist, na.rm=T)) ))
+print(summary(fitdh))
+#
+(fitdl <- lm(fitness ~ utility*factor(drop), data=z %>%filter(dist <= median(dist, na.rm=T)) ))
+print(summary(fitdl))
+write.csv(z, file=sprintf('test_utility_fitness2_step_id%s.csv',step_id), row.names=F)
+```
+
+```{r, fig.height=8, fig.width=10, fig.dpi=800}
+       
+  i <- 3
+
+self <- env2
+
+theta <- self$rsiena_model$thetaUsed
+
+# step_ids <- round(c(1,8,64,512, self$rsiena_model$n3/2, self$rsiena_model$n3))
+acpds <- seq(1, nrow(theta), by= self$M )
+step_ids <- acpds[c(1:min(3, length(acpds)-1),length(acpds))]
+#
+step_id <- step_ids[ 2 ]
+
+  # step_id <- 1
+  cat(sprintf('\nstep %s: actors ', step_id))
+  
+  bi_env_mat_step <- self$bi_env_arr[, , step_id]
+  
+  act_counterfacts <- list()
+
+  
+  # for (i in 1:min(3, self$M)) {
+    cat(sprintf(' %s ', i))
+    
+    
+    ##**ACTOR i DECISION PERSPECTIVE** 0000000000000000000000000000000000
+    
+    ##**TODO**
+    ## ALL actor-component counterfactual configuations for Actor i  (2^N rows by N cols)
+    iland <- expand.grid(lapply(1:self$N, function(x) 0:1 ))
+    iland_config_step_row_id <- which(apply(iland, 1, function(x) all(x == bi_env_mat_step[i,]) ))
+    
+    fit_vec <- env1$fitness_landscape[1, , 1 + 2*env1$N]
+    
+    ## fitness
+    fitness_land1 <- env1$fitness_landscape[1, , 1:env1$N]
+    #
+    if ( ! all( iland == fitness_land1) ) {
+      stop('fitness landscape configurations do not match iland configurations')
+    }
+    
+    
+    
+    ##**TODO**
+    ##**TODO** COMBINE utility and 'fitness' measures in dataframe by configuration with distance from actor's current configuration
+    ##*##**TODO**
+    ##**TODO**
+    ##**TODO  CHANGE TO ACTOR-SPECIFIC LANDSCAPES **
+    tmpmat <- bi_env_mat_step
+    ## ifit dimensions [ M, 2^N ]
+    iutil <- apply(iland, 1, function(x){
+      tmpmat[i,] <- x  ## set counterfactual actor-component configuration
+      config_util <- if('matrix' %in% class(theta)) {
+        self$get_struct_mod_stats_mat_from_bi_mat( tmpmat ) %*% theta[step_id,] ## variable thetas
+      } else {
+        self$get_struct_mod_stats_mat_from_bi_mat( tmpmat ) %*% theta   ## fixed thetas
+      }
+      return( config_util ) ## compute utility vector
+    }) 
+    
+   
+    # plot(ifit[actor_i, ])
+    
+    # apply
+    
+    # ids.max <- which(ifit == max(ifit), arr.ind = TRUE) 
+    # fits.max <- ifit[ ids.max ]
+    # nmax <- length(fits.max)
+    
+    # ifit
+    
+    # ids.max[1,]
+    
+    # act_counterfacts[[i]] <- list(
+    #   ifit = ifit, #Given all other ties, Actor i's configurations applied to utility func for all actors
+    #   ids.max = ids.max,
+    #   fits.max = fits.max,
+    #   nmax = nmax
+    # )
+    
+  
+    ## distances of each counterfactual configuration 
+    actor_i <- i
+    start_actor_config <- bi_env_mat_step[actor_i, ]
+    start_actor_config_str <- paste(start_actor_config, collapse = '|')
+    dist_counterfac <- iland - matrix( rep(start_actor_config, 2^self$N), byrow=T, ncol=self$N)
+    z <- t(sapply( 1:nrow(dist_counterfac),  function(config_i) {
+        x <- dist_counterfac[config_i,  ]   ## dist_counterfac[MxN]
+        util <- iutil[actor_i , config_i]  ## iutil[MxN]
+        fit <- fit_vec[config_i]
+        c(dist=sum(x!=0),
+          drop=sum(x==-1), 
+          nochange=sum(x==0),
+          add=sum(x==1), 
+          config_str = paste( iland[config_i, ], collapse = '|'),
+          config_dist_str=paste(x, collapse = '|'), 
+          fitness=fit, 
+          utility=util,
+          degree= sum(as.numeric(start_actor_config))
+          )
+      })) %>% tidyr::as_tibble() %>% 
+      mutate(start_str=start_actor_config_str, 
+             chain_step_id=step_id,
+             fitness = as.numeric(fitness),
+             utility = as.numeric(utility),
+             dist = as.numeric(dist),
+             drop = as.numeric(drop),
+             nochange = as.numeric(nochange),
+             add = as.numeric(add),
+             degree_high = as.numeric(degree) > median(as.numeric(degree)),
+             high_dist = dist > median(dist, na.rm=T)
+             ) 
+z$repertoire <- apply(z[,c('add','drop','dist','degree_high')], 1, function(x)paste(x, collapse = '|'))
+z$add_by_dist <- apply(z[,c('add','dist')], 1, function(x)paste(x, collapse = '|'))
+z$add_by_high_dist <- apply(z[,c('add','high_dist')], 1, function(x)paste(x, collapse = '|'))
+    
+    
 
 plt <- z %>% ggplot(aes(x=utility, y=fitness, color=factor(add))) +
   geom_smooth(alpha=.1, method='lm') +
   geom_point(alpha=.2) +
   facet_grid(factor(dist) ~ . , scales='free_y') +
-  geom_vline(aes(xintercept = mean, color=factor(dist)), data=z%>%group_by(dist,chain_step_id)%>%summarize(mean=mean(utility))) +
+  geom_vline(aes(xintercept = mean, color=factor(dist)), 
+             data=z%>%group_by(dist)%>%summarize(mean=mean(utility))) +
 # facet_grid(.~dist) +
   theme_bw() + 
-  ggtitle(sprintf('Actor %s Fitness as function of Utility\nby configuration distance (number of tie changes from current config.)', actor_i))
+  ggtitle(sprintf('Actor %s Step %s Fitness as function of Utility\nby configuration distance (number of tie changes from current config.)', actor_i, step_id))
 
 print(plt)
 
-(fita <- lm(fitness ~ utility*factor(add), data=z ))
+(fita <- lm(fitness ~ utility*factor(add), data=z  ))
 print(summary(fita))
-(fitd <- lm(fitness ~ utility*factor(drop), data=z ))
+(fitd <- lm(fitness ~ utility*factor(drop), data=z  ))
 print(summary(fitd))
+#
+(fitah <- lm(fitness ~ utility*factor(add), data=z %>%filter(dist > median(dist, na.rm=T)) ))
+print(summary(fitah))
+#
+(fital <- lm(fitness ~ utility*factor(add), data=z %>%filter(dist <= median(dist, na.rm=T)) ))
+print(summary(fital))
+#
+(fitdh <- lm(fitness ~ utility*factor(drop), data=z %>%filter(dist > median(dist, na.rm=T)) ))
+print(summary(fitdh))
+#
+(fitdl <- lm(fitness ~ utility*factor(drop), data=z %>%filter(dist <= median(dist, na.rm=T)) ))
+print(summary(fitdl))
+write.csv(z, file=sprintf('test_utility_fitness2_step_id%s.csv',step_id), row.names=F)
     
 ```
 
 
 ```{r, fig.height=8, fig.width=10, fig.dpi=800}
-   self <- env1
-
-theta <- self$rsiena_model$thetaUsed
-
-# step_ids <- round(c(1,8,64,512, self$rsiena_model$n3/2, self$rsiena_model$n3))
-acpds <- seq(1, nrow(theta), by= self$M )
-step_ids <- c(acpds[1:min(3, length(acpds))])
-#
-step_id <- step_ids[ 2 ]
-
-  # step_id <- 1
-  cat(sprintf('\nstep %s: actors ', step_id))
-  
-  bi_env_mat_step <- self$bi_env_arr[, , step_id]
-  
-  act_counterfacts <- list()
-  
-  i <- 2
-  
-  # for (i in 1:min(3, self$M)) {
-    cat(sprintf(' %s ', i))
-    
-    
-    ##**ACTOR i DECISION PERSPECTIVE** 0000000000000000000000000000000000
-    
-    ##**TODO**
-    ## ALL actor-component counterfactual configuations for Actor i  (2^N rows by N cols)
-    iland <- expand.grid(lapply(1:self$N, function(x) 0:1 ))
-    iland_config_step_row_id <- which(apply(iland, 1, function(x) all(x == bi_env_mat_step[i,]) ))
-    
-    fit_vec <- env1$fitness_landscape[1, , 1 + 2*env1$N]
-    
-    ## fitness
-    fitness_land1 <- env1$fitness_landscape[1, , 1:env1$N]
-    #
-    if ( ! all( iland == fitness_land1) ) {
-      stop('fitness landscape configurations do not match iland configurations')
-    }
-    
-    
-    
-    ##**TODO**
-    ##**TODO** COMBINE utility and 'fitness' measures in dataframe by configuration with distance from actor's current configuration
-    ##*##**TODO**
-    ##**TODO**
-    ##**TODO  CHANGE TO ACTOR-SPECIFIC LANDSCAPES **
-    tmpmat <- bi_env_mat_step
-    ## ifit dimensions [ M, 2^N ]
-    iutil <- apply(iland, 1, function(x){
-      tmpmat[i,] <- x  ## set counterfactual actor-component configuration
-      config_util <- if('matrix' %in% class(theta)) {
-        self$get_struct_mod_stats_mat_from_bi_mat( tmpmat ) %*% theta[step_id,] ## variable thetas
-      } else {
-        self$get_struct_mod_stats_mat_from_bi_mat( tmpmat ) %*% theta   ## fixed thetas
-      }
-      return( config_util ) ## compute utility vector
-    }) 
-    
-   
-    # plot(ifit[actor_i, ])
-    
-    # apply
-    
-    # ids.max <- which(ifit == max(ifit), arr.ind = TRUE) 
-    # fits.max <- ifit[ ids.max ]
-    # nmax <- length(fits.max)
-    
-    # ifit
-    
-    # ids.max[1,]
-    
-    # act_counterfacts[[i]] <- list(
-    #   ifit = ifit, #Given all other ties, Actor i's configurations applied to utility func for all actors
-    #   ids.max = ids.max,
-    #   fits.max = fits.max,
-    #   nmax = nmax
-    # )
-    
-    ## distances of each counterfactual configuration 
-    actor_i <- i
-    start_actor_config <- bi_env_mat_step[actor_i, ]
-    start_actor_config_str <- paste(start_actor_config, collapse = '|')
-    dist_counterfac <- iland - matrix( rep(start_actor_config, 2^self$N), byrow=T, ncol=self$N)
-    z <- t(sapply( 1:nrow(dist_counterfac),  function(config_i) {
-        x <- dist_counterfac[config_i,  ]   ## dist_counterfac[MxN]
-        util <- iutil[actor_i , config_i]  ## iutil[MxN]
-        fit <- fit_vec[config_i]
-        c(dist=sum(x!=0),
-          drop=sum(x==-1), 
-          nochange=sum(x==0),
-          add=sum(x==1), 
-          config_str = paste( iland[config_i, ], collapse = '|'),
-          config_dist_str=paste(x, collapse = '|'), 
-          fitness=fit, 
-          utility=util
-          )
-      })) %>% tidyr::as_tibble() %>% 
-      mutate(start_str=start_actor_config_str, 
-             chain_step_id=step_id,
-             fitness = as.numeric(fitness),
-             utility = as.numeric(utility),
-             dist = as.numeric(dist),
-             drop = as.numeric(drop),
-             nochange = as.numeric(nochange),
-             add = as.numeric(add)
-             ) 
-
-plt <- z %>% ggplot(aes(x=utility, y=fitness, color=factor(add))) + 
-  geom_smooth(alpha=.1, method='lm') +
-  geom_point(alpha=.2) + 
-  facet_grid(factor(dist) ~ . , scales='free_y') +
-  geom_vline(aes(xintercept = mean, color=factor(dist)), data=z%>%group_by(dist,chain_step_id)%>%summarize(mean=mean(utility))) +
-# facet_grid(.~dist) +
-  theme_bw() + 
-  ggtitle(sprintf('Actor %s Fitness as function of Utility\nby configuration distance (number of tie changes from current config.)', actor_i))
-
-print(plt)
-    
-
-(fita <- lm(fitness ~ utility*factor(add), data=z ))
-print(summary(fita))
-(fitd <- lm(fitness ~ utility*factor(drop), data=z ))
-print(summary(fitd))
-
-```
-
-```{r, fig.height=8, fig.width=10, fig.dpi=800}
-    self <- env1
-
-theta <- self$rsiena_model$thetaUsed
-
-# step_ids <- round(c(1,8,64,512, self$rsiena_model$n3/2, self$rsiena_model$n3))
-acpds <- seq(1, nrow(theta), by= self$M )
-step_ids <- c(acpds[1:min(3, length(acpds))])
-#
-step_id <- step_ids[ 2 ]
-
-  # step_id <- 1
-  cat(sprintf('\nstep %s: actors ', step_id))
-  
-  bi_env_mat_step <- self$bi_env_arr[, , step_id]
-  
-  act_counterfacts <- list()
-  
-  i <- 3
-  
-  # for (i in 1:min(3, self$M)) {
-    cat(sprintf(' %s ', i))
-    
-    
-    ##**ACTOR i DECISION PERSPECTIVE** 0000000000000000000000000000000000
-    
-    ##**TODO**
-    ## ALL actor-component counterfactual configuations for Actor i  (2^N rows by N cols)
-    iland <- expand.grid(lapply(1:self$N, function(x) 0:1 ))
-    iland_config_step_row_id <- which(apply(iland, 1, function(x) all(x == bi_env_mat_step[i,]) ))
-    
-    fit_vec <- env1$fitness_landscape[1, , 1 + 2*env1$N]
-    
-    ## fitness
-    fitness_land1 <- env1$fitness_landscape[1, , 1:env1$N]
-    #
-    if ( ! all( iland == fitness_land1) ) {
-      stop('fitness landscape configurations do not match iland configurations')
-    }
-    
-    
-    
-    ##**TODO**
-    ##**TODO** COMBINE utility and 'fitness' measures in dataframe by configuration with distance from actor's current configuration
-    ##*##**TODO**
-    ##**TODO**
-    ##**TODO  CHANGE TO ACTOR-SPECIFIC LANDSCAPES **
-    tmpmat <- bi_env_mat_step
-    ## ifit dimensions [ M, 2^N ]
-    iutil <- apply(iland, 1, function(x){
-      tmpmat[i,] <- x  ## set counterfactual actor-component configuration
-      config_util <- if('matrix' %in% class(theta)) {
-        self$get_struct_mod_stats_mat_from_bi_mat( tmpmat ) %*% theta[step_id,] ## variable thetas
-      } else {
-        self$get_struct_mod_stats_mat_from_bi_mat( tmpmat ) %*% theta   ## fixed thetas
-      }
-      return( config_util ) ## compute utility vector
-    }) 
-    
-   
-    # plot(ifit[actor_i, ])
-    
-    # apply
-    
-    # ids.max <- which(ifit == max(ifit), arr.ind = TRUE) 
-    # fits.max <- ifit[ ids.max ]
-    # nmax <- length(fits.max)
-    
-    # ifit
-    
-    # ids.max[1,]
-    
-    # act_counterfacts[[i]] <- list(
-    #   ifit = ifit, #Given all other ties, Actor i's configurations applied to utility func for all actors
-    #   ids.max = ids.max,
-    #   fits.max = fits.max,
-    #   nmax = nmax
-    # )
-    
-    ## distances of each counterfactual configuration 
-    actor_i <- i
-    start_actor_config <- bi_env_mat_step[actor_i, ]
-    start_actor_config_str <- paste(start_actor_config, collapse = '|')
-    dist_counterfac <- iland - matrix( rep(start_actor_config, 2^self$N), byrow=T, ncol=self$N)
-    z <- t(sapply( 1:nrow(dist_counterfac),  function(config_i) {
-        x <- dist_counterfac[config_i,  ]   ## dist_counterfac[MxN]
-        util <- iutil[actor_i , config_i]  ## iutil[MxN]
-        fit <- fit_vec[config_i]
-        c(dist=sum(x!=0),
-          drop=sum(x==-1), 
-          nochange=sum(x==0),
-          add=sum(x==1), 
-          config_str = paste( iland[config_i, ], collapse = '|'),
-          config_dist_str=paste(x, collapse = '|'), 
-          fitness=fit, 
-          utility=util
-          )
-      })) %>% tidyr::as_tibble() %>% 
-      mutate(start_str=start_actor_config_str, 
-             chain_step_id=step_id,
-             fitness = as.numeric(fitness),
-             utility = as.numeric(utility),
-             dist = as.numeric(dist),
-             drop = as.numeric(drop),
-             nochange = as.numeric(nochange),
-             add = as.numeric(add)
-             )
-
-plt <- z %>% ggplot(aes(x=utility, y=fitness, color=factor(add))) +
-  geom_smooth(alpha=.1, method='lm') +
-  geom_point(alpha=.2) + 
-  facet_grid(factor(dist) ~ . , scales='free_y') +
-  geom_vline(aes(xintercept = mean, color=factor(dist)), data=z%>%group_by(dist,chain_step_id)%>%summarize(mean=mean(utility))) +
-# facet_grid(.~dist) +
-  theme_bw() + 
-  ggtitle(sprintf('Actor %s Fitness as function of Utility\nby configuration distance (number of tie changes from current config.)', actor_i))
-
-print(plt)
-
-
-(fita <- lm(fitness ~ utility*factor(add), data=z ))
-print(summary(fita))
-(fitd <- lm(fitness ~ utility*factor(drop), data=z ))
-print(summary(fitd))
-    
-```
-
-
-```{r, fig.height=8, fig.width=10, fig.dpi=800}
-    self <- env1
-
-theta <- self$rsiena_model$thetaUsed
-
-# step_ids <- round(c(1,8,64,512, self$rsiena_model$n3/2, self$rsiena_model$n3))
-acpds <- seq(1, nrow(theta), by= self$M )
-step_ids <- c(acpds[1:min(3, length(acpds))])
-#
-step_id <- step_ids[ 2 ]
-
-  # step_id <- 1
-  cat(sprintf('\nstep %s: actors ', step_id))
-  
-  bi_env_mat_step <- self$bi_env_arr[, , step_id]
-  
-  act_counterfacts <- list()
-  
+       
   i <- 5
+
+self <- env2
+
+theta <- self$rsiena_model$thetaUsed
+
+# step_ids <- round(c(1,8,64,512, self$rsiena_model$n3/2, self$rsiena_model$n3))
+acpds <- seq(1, nrow(theta), by= self$M )
+step_ids <- acpds[c(1:min(3, length(acpds)-1),length(acpds))]
+#
+step_id <- step_ids[ 2 ]
+
+  # step_id <- 1
+  cat(sprintf('\nstep %s: actors ', step_id))
+  
+  bi_env_mat_step <- self$bi_env_arr[, , step_id]
+  
+  act_counterfacts <- list()
+
   
   # for (i in 1:min(3, self$M)) {
     cat(sprintf(' %s ', i))
@@ -1004,10 +1129,10 @@ step_id <- step_ids[ 2 ]
     
     ## fitness
     fitness_land1 <- env1$fitness_landscape[1, , 1:env1$N]
-    # #
-    # if ( ! all( iland == fitness_land1) ) {
-    #   stop('fitness landscape configurations do not match iland configurations')
-    # }
+    #
+    if ( ! all( iland == fitness_land1) ) {
+      stop('fitness landscape configurations do not match iland configurations')
+    }
     
     
     
@@ -1048,6 +1173,7 @@ step_id <- step_ids[ 2 ]
     #   nmax = nmax
     # )
     
+  
     ## distances of each counterfactual configuration 
     actor_i <- i
     start_actor_config <- bi_env_mat_step[actor_i, ]
@@ -1064,7 +1190,8 @@ step_id <- step_ids[ 2 ]
           config_str = paste( iland[config_i, ], collapse = '|'),
           config_dist_str=paste(x, collapse = '|'), 
           fitness=fit, 
-          utility=util
+          utility=util,
+          degree= sum(as.numeric(start_actor_config))
           )
       })) %>% tidyr::as_tibble() %>% 
       mutate(start_str=start_actor_config_str, 
@@ -1074,25 +1201,45 @@ step_id <- step_ids[ 2 ]
              dist = as.numeric(dist),
              drop = as.numeric(drop),
              nochange = as.numeric(nochange),
-             add = as.numeric(add)
-             )
+             add = as.numeric(add),
+             degree_high = as.numeric(degree) > median(as.numeric(degree)),
+             high_dist = dist > median(dist, na.rm=T)
+             ) 
+z$repertoire <- apply(z[,c('add','drop','dist','degree_high')], 1, function(x)paste(x, collapse = '|'))
+z$add_by_dist <- apply(z[,c('add','dist')], 1, function(x)paste(x, collapse = '|'))
+z$add_by_high_dist <- apply(z[,c('add','high_dist')], 1, function(x)paste(x, collapse = '|'))
+    
+    
 
 plt <- z %>% ggplot(aes(x=utility, y=fitness, color=factor(drop))) +
   geom_smooth(alpha=.1, method='lm') +
-  geom_point(alpha=.2) + 
+  geom_point(alpha=.2) +
   facet_grid(factor(dist) ~ . , scales='free_y') +
-  geom_vline(aes(xintercept = mean, color=factor(dist)), data=z%>%group_by(dist,chain_step_id)%>%summarize(mean=mean(utility))) +
+  geom_vline(aes(xintercept = mean, color=factor(dist)), 
+             data=z%>%group_by(dist)%>%summarize(mean=mean(utility))) +
 # facet_grid(.~dist) +
   theme_bw() + 
-  ggtitle(sprintf('Actor %s Fitness as function of Utility\nby configuration distance (number of tie changes from current config.)', actor_i))
+  ggtitle(sprintf('Actor %s Step %s Fitness as function of Utility\nby configuration distance (number of tie changes from current config.)', actor_i, step_id))
 
 print(plt)
 
-
-(fita <- lm(fitness ~ utility*factor(add), data=z ))
+(fita <- lm(fitness ~ utility*factor(add), data=z  ))
 print(summary(fita))
-(fitd <- lm(fitness ~ utility*factor(drop), data=z ))
+(fitd <- lm(fitness ~ utility*factor(drop), data=z  ))
 print(summary(fitd))
+#
+(fitah <- lm(fitness ~ utility*factor(add), data=z %>%filter(dist > median(dist, na.rm=T)) ))
+print(summary(fitah))
+#
+(fital <- lm(fitness ~ utility*factor(add), data=z %>%filter(dist <= median(dist, na.rm=T)) ))
+print(summary(fital))
+#
+(fitdh <- lm(fitness ~ utility*factor(drop), data=z %>%filter(dist > median(dist, na.rm=T)) ))
+print(summary(fitdh))
+#
+(fitdl <- lm(fitness ~ utility*factor(drop), data=z %>%filter(dist <= median(dist, na.rm=T)) ))
+print(summary(fitdl))
+write.csv(z, file=sprintf('test_utility_fitness2_step_id%s.csv',step_id), row.names=F)
     
 ```
     
@@ -1197,5 +1344,8 @@ ggheatmap::ggheatmap(env1$fitness_landscape[10,,])
 
 
 ```{r}
-z$
+
+
+
+
 ```
