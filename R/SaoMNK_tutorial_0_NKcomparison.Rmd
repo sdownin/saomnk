@@ -3,9 +3,9 @@ title: 'SaoMNK Tutorial: Generalizing NK Epistatic Interaction Fitness'
 author: "S. Downing"
 date: "`r Sys.Date()`"
 output:
+  pdf_document: default
   html_document:
     df_print: paged
-  pdf_document: default
 ---
 
 This project begins from the simple premise that the task of endogenizing the 
@@ -64,12 +64,10 @@ SaomNkRSienaBiEnv <- source(file.path(dir_r, 'SAOM_NK_R6_model.R'))$value
 ###############  Load R6 Class DEPENDENCIES ############################
 ## Biparite Environment Search Simulation Class
 SaomNkRSienaBiEnv <- source(file.path(dir_r, 'SAOM_NK_R6_model.R'))$value
-# ## RSiena search Class
-# SaomNkRSienaBiEnv_search_rsiena <- source(file.path(dir_proj, 'SAOM_NK_R6_search_rsiena_model.R'))$value
 ## default settings: Users do not change; TODO: implment within restricted class attributes
 DV_NAME <- 'self$bipartite_rsienaDV'
-#
-steps_per_actor <- 50
+## define simulation iterations based on 
+steps_per_actor <- 30
 ```
 
 
@@ -83,7 +81,7 @@ steps_per_actor <- 50
 environ_params <- list(
   M = 12,       ## Actors
   N = 12,       ## Components
-  BI_PROB = 1, ## Environmental Density (DGP hyperparameter)
+  BI_PROB = 0, ## Environmental Density (DGP hyperparameter)
   component_matrix_start = 'rand', ##**TODO** Implement: 'rand','modular','semi-modular',...
   rand_seed = 1234,
   plot_init = F,

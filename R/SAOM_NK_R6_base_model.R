@@ -325,27 +325,26 @@ SaomNkRSienaBiEnv_base <- R6Class(
     
     ##
     include_rsiena_effect_from_eff_list = function(eff) {
-      ##---------- 2+ Effects Combination --------------------
-      if (length(eff$effect)>1)
-      {
-        if (all(eff$effect %in% c('egoX', 'inPopX'))) {
-          self$rsiena_effects <- includeEffects(self$rsiena_effects,  egoX, inPopX, ## get network statistic function from effect name (character)
-                                                name = eff$dv_name, 
-                                                interaction1 = eff$interaction1,
-                                                fix = eff$fix)
-          self$rsiena_effects <- setEffect(self$rsiena_effects,  egoX, inPopX, 
-                                           interaction1 = eff$interaction1,
-                                           name = eff$dv_name, parameter = eff$parameter,  fix = eff$fix)
-        }
-        else 
-        {
-          stop('Effect combination not yet implemented.')
-        }
-        
-        return(NULL)
-      }
-
       
+      # ##---------- 2+ Effects Combination --------------------
+      # if (length(eff$effect)>1)
+      # {
+      #   if (all(eff$effect %in% c('egoX', 'inPopX'))) {
+      #     self$rsiena_effects <- includeEffects(self$rsiena_effects,  egoX, inPopX, ## get network statistic function from effect name (character)
+      #                                           name = eff$dv_name, 
+      #                                           interaction1 = eff$interaction1,
+      #                                           fix = eff$fix)
+      #     self$rsiena_effects <- setEffect(self$rsiena_effects,  egoX, inPopX, 
+      #                                      interaction1 = eff$interaction1,
+      #                                      name = eff$dv_name, parameter = eff$parameter,  fix = eff$fix)
+      #   }
+      #   else 
+      #   {
+      #     stop('Effect combination not yet implemented.')
+      #   }
+      #   
+      #   return(NULL)
+      # }
       ##---------- 1 Efect --------------------------
       
       if (eff$effect == 'density') 
@@ -632,6 +631,23 @@ SaomNkRSienaBiEnv_base <- R6Class(
         #                                  fix = interact$fix,
         #                                  interaction1 = c(interact$interaction1, interact$interaction2))  #,
         
+      } else if(all(c('inPopX','altX') %in% interact$effects))  {
+        
+        self$rsiena_effects <- includeInteraction(self$rsiena_effects, inPopX, altX,  ## get network statistic function from effect name (character)
+                                                  name = interact$dv_name, # interaction1 = eff$interaction1,
+                                                  # parameter = interact$parameter,
+                                                  fix = interact$fix,
+                                                  interaction1 = c(interact$interaction1, interact$interaction2) )
+        ## This workaround adjusts parameter of interaction without name
+        ##**TODO: Check for RSiena official implementation**
+        self$rsiena_effects[self$rsiena_effects$include,][sum(self$rsiena_effects$include),'parm'] <- interact$parameter
+        ## NEED TO SET INTERACTNG VARIABLE NAMES HERE FOR USE IN LATER COMPUTATIONS (theta_matrix)
+        self$rsiena_effects[self$rsiena_effects$include,][sum(self$rsiena_effects$include),'manual_interaction'] <- interact$effect
+        # self$rsiena_effects <- setEffect(self$rsiena_effects, unspInt,
+        #                                  name = interact$dv_name,
+        #                                  parameter = interact$parameter,
+        #                                  fix = interact$fix,
+        #                                  interaction1 = c(interact$interaction1, interact$interaction2))  #,
         
       }  else {
         

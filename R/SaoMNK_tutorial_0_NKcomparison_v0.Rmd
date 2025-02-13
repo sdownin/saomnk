@@ -83,7 +83,7 @@ steps_per_actor <- 50
 environ_params <- list(
   M = 12,       ## Actors
   N = 12,       ## Components
-  BI_PROB = 1, ## Environmental Density (DGP hyperparameter)
+  BI_PROB = 0, ## Environmental Density (DGP hyperparameter)
   component_matrix_start = 'rand', ##**TODO** Implement: 'rand','modular','semi-modular',...
   rand_seed = 1234,
   plot_init = F,
@@ -512,14 +512,7 @@ environment (actors and components)
 
 
 ```{r, fig.height=5, fig.width=11}
-# snapshot_ids <- round( seq(1, dim(env1$bi_env_arr)[3], length=3 ) )
-# snapshot_ids <- c(1, 1+ (1:8)*env1$M)
-snapshot_ids <- c(1, (1:8)*10, dim(env1$bi_env_arr)[3]  )
-for (i in 1:length(snapshot_ids)) {
-  step <- snapshot_ids[ i ]
-  mat <- env2$bi_env_arr[,,step]
-  env2$plot_bipartite_system_from_mat(mat, step)
-}
+env2$plot_snapshots(snapshot_ids)
 ```
 
 

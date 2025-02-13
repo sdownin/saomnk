@@ -957,7 +957,36 @@ SaomNkRSienaBiEnv <- R6Class(
         theta_matrix[, j] <- rep(theta_in[j], iterations)
       }  
       colnames(theta_matrix) <- names(theta_in)
+      rownames(theta_matrix) <- 1:nrow(theta_matrix)
       #print(theta_matrix)
+      return(theta_matrix)
+    },
+    
+    ##
+    shock_theta_matrix = function(theta_matrix, ## matrix[iterations, n_parameters]
+                                  theta_shocks  ## list(shock1list, shock2list, ...)
+                                  ) {
+      portions <- sum(sapply(theta_shocks, function(x)ifelse(is.null(x$portion),1,x$portion)))
+      chunksteps <- floor(nrow(theta_matrix) / portions)
+      .<- lapply(seq_along(theta_shocks), function(ii){
+        start <- 1 + (ii-1) * chunksteps
+        end   <- ii * chunksteps + ((theta_shocks[[ii]]$portion - 1) * chunksteps)
+        theta_shocks[[ii]]$chain_step_ids <<- (start:end) ##**Break scope to modify input**
+      })
+      for (i_shock in seq_along(theta_shocks)) {
+        shock_rows  <- theta_shocks[[ i_shock ]]$chain_step_ids
+        effect_col <- which(  colnames(theta_matrix)  == theta_shocks[[ i_shock ]]$effect )
+        theta_matrix[shock_rows, effect_col] <- theta_shocks[[i_shock]]$parameter
+      }
+      ## if remainder, fill matrix remainder rows to last set row
+      remainder <- nrow(theta_matrix) - (chunksteps * portions)
+      if (remainder) {
+        last_set_row <- nrow(theta_matrix) - remainder
+        last_set_params <- theta_matrix[last_set_row, ]
+        fill_rows <- (1+last_set_row):nrow(theta_matrix)
+        theta_matrix[fill_rows, ] <- matrix(rep(last_set_params, length(fill_rows)), 
+                                            byrow=T, nrow=length(fill_rows))
+      }
       return(theta_matrix)
     },
     
@@ -978,6 +1007,7 @@ SaomNkRSienaBiEnv <- R6Class(
     search_rsiena = function(structure_model, 
                              array_bi_net=NULL, ## starting matrices for the simulation
                              theta_matrix=NULL, ## variable theta matrix replaces parameter values in structure_model
+                             theta_shocks=NULL, ## list of parameter shocks (effects, parameter values, portions of simulation)
                              iterations=1000,   ## replaced by nrow(theta_matrix) if theta_matrix is not null
                              run_seed=123, 
                              process_chain=TRUE,
@@ -995,8 +1025,7 @@ SaomNkRSienaBiEnv <- R6Class(
       ##--------- I. SET BIPARTITE NETWORK DV ARRAY IF NULL -----------------
       # rsiena_model$sims[[sim_id]][[wave_id]][[bi_env_dv_id]] 
       ## Set up bipartite matrix RSiena dependent variable 
-      if (any(is.null(array_bi_net))) 
-      {
+      if (any(is.null(array_bi_net))) {
         if(is.null(self$bipartite_matrix)) 
           stop('bipartite_matrix is not set and no array_bi_net provided.')
         #
@@ -1026,13 +1055,18 @@ SaomNkRSienaBiEnv <- R6Class(
       
       
       ##---------- III. SET THETA MATRIX IF NULL  -----------------------------
-      if (any(is.null(theta_matrix))) {
+      if(any(is.null(theta_matrix))) {
         theta_matrix <- self$get_theta_matrix(input_effs, iterations)
+      }
+      # HANDLE SHOCKS IF APPLICABLE
+      if(!is.null(theta_shocks) & length(theta_shocks)) {
+        theta_matrix <- self$shock_theta_matrix(theta_matrix, theta_shocks)
       }
       #
       if(verbose) {
-        cat('\n\n theta_matrix : \n\n')
-        print(theta_matrix)
+        cat('\n\n theta_matrix summary (first and last 5 rows) : \n\n')
+        print_rows <- c(1:5, (nrow(theta_matrix)-4):nrow(theta_matrix) )
+        print(theta_matrix[print_rows, ])
       }
       
       ##---------- IV. RUN SIMULATION  -----------------------------
@@ -1082,6 +1116,17 @@ SaomNkRSienaBiEnv <- R6Class(
       
     },
     ############################################################################
+    
+    
+    plot_snapshots = function(snapshot_ids=c(1,2)) {
+      if(!length(snapshot_ids)) 
+        return()
+      for (i in 1:length(snapshot_ids)) {
+        step <- snapshot_ids[ i ]
+        mat <- self$bi_env_arr[,,step]
+        self$plot_bipartite_system_from_mat(mat, step)
+      }
+    },
     
     
     ##
@@ -2111,7 +2156,8 @@ SaomNkRSienaBiEnv <- R6Class(
         cat('\n\n\nSimulated Decision Chain Summary:\n\n')
         print(summary(self$chain_stats))
         print(dim(self$chain_stats))
-        print(self$chain_stats)
+        print(self$chain_stats[1:5,])
+        cat('\n...\n\n')
       }
 
     },
