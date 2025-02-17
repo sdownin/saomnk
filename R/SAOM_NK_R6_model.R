@@ -92,6 +92,8 @@ SaomNkRSienaBiEnv <- R6Class(
       }
       dv_name <- structure_model$dv_bipartite$name
       
+      input_effs <- self$get_input_from_structure_model(structure_model)
+      
       
       structeffs <- sapply(structure_model$dv_bipartite$effects, function(x)x$parameter)
       names(structeffs) <- sapply(structure_model$dv_bipartite$effects, function(x)x$effect)
@@ -241,15 +243,15 @@ SaomNkRSienaBiEnv <- R6Class(
       }
       ##------------------------------------------------------------
       if (ninteraction) {
-        # for (i in 1:ninteraction){
-        #   property <- sprintf('interaction_%s', i)
-        #   eff <- structure_model$dv_bipartite$interactions[[ ninteraction[i] ]]
-        #   int1 <- gsub('self\\$','', eff$interaction1 )
-        #   int2 <- gsub('self\\$','', eff$interaction2 )
-        #   interact_item <- list(self[[int1]],  self[[int2]])
-        #   names(interact_item) <- c(int1, int2)
-        #   input_varlist[[ property ]]  <- interact_item
-        # }
+        for (i in 1:ninteraction){
+          property <- sprintf('interaction_%s', i)
+          eff <- structure_model$dv_bipartite$interactions[[ ninteraction[i] ]]
+          int1 <- gsub('self\\$','', eff$interaction1 )
+          int2 <- gsub('self\\$','', eff$interaction2 )
+          interact_item <- list(self[[int1]],  self[[int2]])
+          names(interact_item) <- c(int1, int2)
+          input_varlist[[ property ]]  <- interact_item
+        }
       }
       ##-------------------------------------------------------------
       #
@@ -261,6 +263,167 @@ SaomNkRSienaBiEnv <- R6Class(
     },
     
     
+    
+    ## nonself function does not affect object 'self'
+    get_rsiena_data_nonself = function(structure_model, input_varlist) {
+      ACTORS     <- sienaNodeSet(self$M, nodeSetName="ACTORS")
+      COMPONENTS <- sienaNodeSet(self$N, nodeSetName="COMPONENTS")
+  
+      dv_name <- structure_model$dv_bipartite$name
+  
+      structeffs <- sapply(structure_model$dv_bipartite$effects, function(x)x$parameter)
+      names(structeffs) <- sapply(structure_model$dv_bipartite$effects, function(x)x$effect)
+      
+      coCovars      <- sapply(structure_model$dv_bipartite$coCovars, function(x)x$effect)
+      varCovars     <- sapply(structure_model$dv_bipartite$varCovars, function(x)x$effect)
+      coDyadCovars  <- sapply(structure_model$dv_bipartite$coDyadCovars, function(x)x$effect)
+      varDyadCovars <- sapply(structure_model$dv_bipartite$varDyadCovars, function(x)x$effect)
+      interactions  <- sapply(structure_model$dv_bipartite$interactions, function(x)x$effect)
+      
+      coCovarTypes      <- sapply(structure_model$dv_bipartite$coCovars, function(x)x$interaction1)
+      varCovarTypes     <- sapply(structure_model$dv_bipartite$varCovars, function(x)x$interaction1)
+      coDyadCovarTypes  <- sapply(structure_model$dv_bipartite$coDyadCovars, function(x)x$interaction1)
+      varDyadCovarTypes <- sapply(structure_model$dv_bipartite$varDyadCovars, function(x)x$interaction1)
+      interactionTypes  <- sapply(structure_model$dv_bipartite$interactions, function(x)paste(c(x$interaction1,x$interaction2), collapse = '|'))
+      
+      component_coCovar_ids     <- grep('self\\$component.+_coCovar', coCovarTypes) ## ex: "self$component_1_coCovar"
+      component_varCovar_ids    <- grep('self\\$component.+_varCovar', varCovarTypes) ## ex: "self$component_1_coCovar"
+      component_coDyadCovar_ids  <- grep('self\\$component.+_coDyadCovar', coDyadCovarTypes) ## ex: "self$component_1_coCovar"
+      component_varDyadCovar_ids <- grep('self\\$component.+_varDyadCovar', varDyadCovarTypes) ## ex: "self$component_1_coCovar"
+      # component_interaction_ids <- grep('(self\\$component.+_coDyadCovar|self\\$component.+_coCovar)', interactionTypes) ## ex: "self$component_1_coCovar"
+      
+      strat_coCovar_ids     <- grep('self\\$strat.+_coCovar', coCovarTypes) ## ex: "self$component_1_coCovar"
+      strat_varCovar_ids    <- grep('self\\$strat.+_varCovar', varCovarTypes) ## ex: "self$component_1_coCovar"
+      strat_coDyadCovar_ids  <- grep('self\\$strat.+_coDyadCovar', coDyadCovarTypes) ## ex: "self$component_1_coCovar"
+      strat_varDyadCovar_ids <- grep('self\\$strat.+_varDyadCovar', varDyadCovarTypes) ## ex: "self$component_1_coCovar"
+      # stratDV_ids     <- grep('self\\$strat_\\d{1,2}_coCovar', covDvTypes ) ## ex: "self$strat_1_coCovar"
+      # strat_interaction_ids <- grep('(self\\$strat.+_coCovar|self\\$strat.+_coDyadCovar)', interactionTypes) ## ex: "self$component_1_coCovar"
+      
+      interaction_ids <- grep('(self\\$strat.+_coCovar|self\\$strat.+_coDyadCovar|self\\$component.+_coCovar|self\\$component.+_coDyadCovar)', interactionTypes) ## ex: "self$component_1_coCovar"
+      
+      ncompo_coCovar     <- length( component_coCovar_ids )
+      ncompo_varCovar    <- length( component_varCovar_ids )
+      ncompo_coDyadCovar  <- length( component_coDyadCovar_ids )
+      ncompo_varDyadCovar <- length( component_varDyadCovar_ids )
+      # ncompo_interaction <- length( component_interaction_ids )
+      
+      nstrat_coCovar     <- length( strat_coCovar_ids )
+      nstrat_varCovar    <- length( strat_varCovar_ids )
+      nstrat_coDyadCovar  <- length( strat_coDyadCovar_ids )
+      nstrat_varDyadCovar <- length( strat_varDyadCovar_ids )
+      # nstrat_interaction <- length( strat_interaction_ids )
+      
+      ninteraction <- length( interaction_ids )
+      
+      ##-------------------------------------------------------------
+      ## COMPONENTS ##
+      if (ncompo_coCovar) {
+        for (i in 1:ncompo_coCovar) {
+          property <- sprintf('component_%s_coCovar', i)
+          eff <- structure_model$dv_bipartite$coCovars[[ component_coCovar_ids[i] ]]
+          input_varlist[[sprintf('%s',property)]] <-  coCovar(eff$x, nodeSet = c('COMPONENTS'))
+        }
+      }
+      if (ncompo_varCovar) {
+        for (i in 1:ncompo_varCovar) {
+          property <- sprintf('component_%s_coCovar', i)
+          eff <- structure_model$dv_bipartite$varCovars[[ component_varCovar_ids[i] ]]
+          input_varlist[[sprintf('%s',property)]] <- varCovar(eff$x, nodeSet = c('COMPONENTS'))
+        }
+      }
+      if (ncompo_coDyadCovar) {
+        for (i in 1:ncompo_coDyadCovar) {
+          property <- sprintf('component_%s_coDyadCovar', i)
+          eff <- structure_model$dv_bipartite$coDyadCovar[[ component_coDyadCovar_ids[i] ]]
+          # print(eff)
+          if ( !is.null(eff$nodeSet) ) {
+            ## A. user provides nodeSet
+            nodeSet <- eff$nodeSet
+          } else if ( self$M != self$N  &  all(c(self$M, self$N) == dim(eff$x)) ) {
+            ## B. different M,N dimensions reveals nodeSet
+            nodeSet <- if (dim(eff$x)[1]==self$M & dim(eff$x)[2]==self$N){c('ACTORS','COMPONENTS')} else {c('COMPONENTS','COMPONENTS')}
+          } else {
+            stop(sprintf('Cannot distinguish actors from components for dimensions M=%s,N=%s; provide nodeSet for effect %s.',
+                         self$M, self$N, eff$effect))
+          }
+          input_varlist[[sprintf('%s',property)]] <-  coDyadCovar(eff$x, nodeSet = nodeSet)
+        }
+      }
+      if (ncompo_varDyadCovar) {
+        for (i in 1:ncompo_varDyadCovar) {
+          property <- sprintf('component_%s_varDyadCovar', i)
+          eff <- structure_model$dv_bipartite$varDyadCovar[[ component_varDyadCovar_ids[i] ]]
+          input_varlist[[sprintf('%s',property)]] <-  varDyadCovar(eff$x, nodeSet = c('COMPONENTS','COMPONENTS'))
+        }
+      }
+      # if (ncompo_interaction) {
+      #   for (i in 1:ncompo_interaction) {
+      #     property <- sprintf('component_%s_interaction', i)
+      #     eff <- structure_model$dv_bipartite$interaction[[ component_interaction_ids[i] ]]
+      #     input_varlist[[sprintf('%s',property)]] <-  varDyadCovar(eff$x, nodeSet = c('COMPONENTS','COMPONENTS'))
+      #   }
+      # }
+      ##-------------------------------------------------------------
+      ## STRATEGIES ##
+      if (nstrat_coCovar) {
+        for (i in 1:nstrat_coCovar) {
+          property <- sprintf('strat_%s_coCovar', i)
+          eff <- structure_model$dv_bipartite$coCovars[[ strat_coCovar_ids[i] ]]
+          input_varlist[[sprintf('%s',property)]] <-  coCovar(eff$x, nodeSet = c('ACTORS'))
+        }
+      }
+      if (nstrat_varCovar) {
+        for (i in 1:nstrat_varCovar) {
+          property <- sprintf('strat_%s_coCovar', i)
+          eff <- structure_model$dv_bipartite$varCovars[[ strat_varCovar_ids[i] ]]
+          input_varlist[[sprintf('%s',property)]] <- varCovar(eff$x, nodeSet = c('ACTORS'))
+        }
+      }
+      if (nstrat_coDyadCovar) {
+        for (i in 1:nstrat_coDyadCovar) {
+          property <- sprintf('strat_%s_coDyadCovar', i)
+          eff <- structure_model$dv_bipartite$coDyadCovar[[ component_coDyadCovar_ids[i] ]]
+          # print(eff)
+          if ( !is.null(eff$nodeSet) ) {
+            ## A. user provides nodeSet
+            nodeSet <- eff$nodeSet
+          } else if ( self$M != self$N  &  all(c(self$M, self$N) == dim(eff$x)) ) {
+            ## B. different M,N dimensions reveals nodeSet
+            nodeSet <- if (dim(eff$x)[1]==self$M & dim(eff$x)[2]==self$N){c('ACTORS','COMPONENTS')} else {c('ACTORS','ACTORS')}
+          } else {
+            stop(sprintf('Cannot distinguish actors from components for dimensions M=%s,N=%s; provide nodeSet for effect %s.',
+                         self$M, self$N, eff$effect))
+          }
+          input_varlist[[sprintf('%s',property)]] <-  coDyadCovar(eff$x, nodeSet = nodeSet)
+        }
+      }
+      if (nstrat_varDyadCovar) {
+        for (i in 1:nstrat_varDyadCovar) {
+          property <- sprintf('strat_%s_varDyadCovar', i)
+          eff <- structure_model$dv_bipartite$varDyadCovar[[ strat_varDyadCovar_ids[i] ]]
+          input_varlist[[sprintf('%s',property)]] <-  varDyadCovar(eff$x, nodeSet = c('ACTORS','ACTORS'))
+        }
+      }
+      ##------------------------------------------------------------
+      if (ninteraction) {
+        for (i in 1:ninteraction){
+          property <- sprintf('interaction_%s', i)
+          eff <- structure_model$dv_bipartite$interactions[[ ninteraction[i] ]]
+          int1 <- gsub('self\\$','', eff$interaction1 )
+          int2 <- gsub('self\\$','', eff$interaction2 )
+          interact_item <- list(self[[int1]],  self[[int2]])
+          names(interact_item) <- c(int1, int2)
+          input_varlist[[ property ]]  <- interact_item
+        }
+      }
+      ##-------------------------------------------------------------
+      #
+      sienaDataCreate_args <- c( list(nodeSets=list(ACTORS, COMPONENTS)), input_varlist ) 
+      rsiena_data <- do.call(sienaDataCreate, sienaDataCreate_args)
+      
+      
+      return(rsiena_data)
+    },
     
     
     ##
@@ -577,6 +740,22 @@ SaomNkRSienaBiEnv <- R6Class(
         
         dv <- structure_model[[ i ]]
         
+        if (length(dv$rates)) {
+          for (j in 1:length(dv$rates)) {
+            cat(sprintf('\n Rate effects i=%s, j=%s\n', i, j))
+            
+            eff <- dv$rates[[ j ]]
+            
+            print(eff)
+            # print(eff)
+            # stop('DEBUG')
+            
+            self$include_rsiena_effect_from_eff_list(eff)
+            # self$rsiena_effects <- setEffect(self$rsiena_effects, density, 
+            #                                 name = 'self$bipartite_rsienaDV', parameter = 0, fix=T)  ## effect parameter 
+          }
+        }
+        
         if (length(dv$effects)) {
           for (j in 1:length(dv$effects)) {
             cat(sprintf('\n structural effects i=%s, j=%s\n', i, j))
@@ -653,6 +832,135 @@ SaomNkRSienaBiEnv <- R6Class(
       
     },
   
+    
+    
+    ##
+    add_rsiena_effects_nonself = function(rsiena_effects, structure_model, theta_shock=NULL) {
+     
+      for (i in 1:length(structure_model)) {
+        
+        dv <- structure_model[[ i ]]
+        
+        if (length(dv$rates)) {
+          for (j in 1:length(dv$rates)) {
+            stop('Rate effects not yet supported.')
+            # cat(sprintf('\n Rate effects i=%s, j=%s\n', i, j))
+            # 
+            # eff <- dv$rates[[ j ]]
+            # 
+            # print(eff)
+            # # print(eff)
+            # # stop('DEBUG')
+            # 
+            # rsiena_effects <- self$include_rsiena_effect_from_eff_list_nonself(rsiena_effects, eff)
+          }
+        }
+        
+        if (length(dv$effects)) {
+          for (j in 1:length(dv$effects)) {
+            cat(sprintf('\n structural effects i=%s, j=%s\n', i, j))
+            
+            eff <- dv$effects[[ j ]]
+            
+            print(eff)
+            # print(eff)
+            # stop('DEBUG')
+            
+            if (!is.null(theta_shock) & theta_shock$shock_on==1 ) {
+              shock_eff_id <- which( theta_shock$effect == eff$effect & theta_shock$interaction1 == eff$interaction1 )
+              if (length(shock_eff_id)) 
+                eff$parameter <- theta_shock$parameter[ shock_eff_id ]
+            }
+            
+            rsiena_effects <- self$include_rsiena_effect_from_eff_list_nonself(rsiena_effects, eff)
+            # self$rsiena_effects <- setEffect(self$rsiena_effects, density, 
+            #                                 name = 'self$bipartite_rsienaDV', parameter = 0, fix=T)  ## effect parameter 
+          }
+        }
+        
+        if (length(dv$coCovars)) {
+          for (j in 1:length(dv$coCovars)) {
+            cat(sprintf('\n coCovars i=%s, j=%s\n', i, j))
+            
+            eff <- dv$coCovars[[ j ]]
+            
+            print(eff)
+            # print(eff)
+            # stop('DEBUG')
+            
+            if (!is.null(theta_shock) & theta_shock$shock_on==1 ) {
+              shock_eff_id <- which( theta_shock$effect == eff$effect & theta_shock$interaction1 == eff$interaction1 )
+              if (length(shock_eff_id)) 
+                eff$parameter <- theta_shock$parameter[ shock_eff_id ]
+            }
+
+            
+            rsiena_effects <- self$include_rsiena_effect_from_eff_list_nonself(rsiena_effects, eff)
+          }
+        }
+        
+        
+        # for (j in 1:length(dv$varCovars)) {
+        #   ##**TODO** Implement variable covariates(?)
+        # }
+        
+        if (length(dv$coDyadCovars)) {
+          for (j in 1:length(dv$coDyadCovars)) {
+            cat(sprintf('\n coDyadCovars i=%s, j=%s\n', i, j))
+            
+            eff <- dv$coDyadCovars[[ j ]]
+            
+            print(eff)
+            # print(eff)
+            # stop('DEBUG')
+            
+            if (!is.null(theta_shock) & theta_shock$shock_on==1 ) {
+              shock_eff_id <- which( theta_shock$effect == eff$effect & theta_shock$interaction1 == eff$interaction1 )
+              if (length(shock_eff_id)) 
+                eff$parameter <- theta_shock$parameter[ shock_eff_id ]
+            }
+            
+            
+            rsiena_effects <- self$include_rsiena_effect_from_eff_list_nonself(rsiena_effects, eff)
+          }
+        }
+        
+        
+        # for (j in 1:length(dv$varDyadCovars)) {
+        #   ##**TODO** Implement variable covariates(?)
+        # }
+        
+        if (length(dv$interactions)) {
+          for (j in 1:length(dv$interactions)) {
+            cat(sprintf('\n interactions i=%s, j=%s\n', i, j))
+            
+            interact <- dv$interactions[[ j ]]
+            
+            interact$effects <- strsplit(interact$effect, '[|]')[[1]]
+            
+            print(interact)
+            # print(interact)
+            # stop('DEBUG')
+            
+            if (!is.null(theta_shock) & theta_shock$shock_on==1 ) {
+              shock_eff_id <- which( theta_shock$effect == interact$effect & theta_shock$interaction1 == interact$interaction1 )
+              if (length(shock_eff_id)) 
+                interact$parameter <- theta_shock$parameter[ shock_eff_id ]
+            }
+            
+            
+            rsiena_effects <- self$include_rsiena_interaction_from_eff_list_nonself(rsiena_effects, interact)
+            
+          }
+        }
+        
+        
+      }
+      
+      return(rsiena_effects)
+      
+    },
+    
     
     
     
@@ -905,12 +1213,13 @@ SaomNkRSienaBiEnv <- R6Class(
       if( ! 'dv_bipartite' %in% names(structure_model) ) 
         stop('structure_model does not contain dv_bipartite.')
       #
+      rates <- structure_model$dv_bipartite$rates %>% ldply(as.data.frame) %>% mutate(interaction1=NA, interaction2=NA) # use previous effects
       structeffs <- structure_model$dv_bipartite$effects %>% ldply(as.data.frame) %>% mutate(interaction1=NA, interaction2=NA) # use previous effects
       coCovars   <- structure_model$dv_bipartite$coCovars %>% ldply(function(x) {
         as.data.frame(x[! names(x)%in%c('x')])
       }) %>% mutate(interaction2=NA)
       coDyadCovars   <- structure_model$dv_bipartite$coDyadCovars %>% ldply(function(x) {
-        as.data.frame(x[! names(x)%in%c('x')])
+        as.data.frame(x[! names(x)%in%c('x','nodeSet')])
       }) %>% mutate(interaction2=NA) 
       # varCovars   <- structure_model$dv_bipartite$varCovars %>% ldply(function(x) {
       #   as.data.frame(x[! names(x)%in%c('x')])
@@ -922,19 +1231,42 @@ SaomNkRSienaBiEnv <- R6Class(
         as.data.frame( x )
       }) 
       #
-      effects <- structeffs %>%  
+      effects <- rates %>% 
+        bind_rows(structeffs) %>%  
         bind_rows(coCovars) %>%  
         bind_rows(coDyadCovars) %>%
         bind_rows(interactions) ## %>%
         # bind_rows(varCovars) %>%
         # bind_rows(varDyadCovars) %>%
       #
+      effects$effect_key <-  sapply(1:nrow(effects), function(i){
+        paste(c(effects$dv_name[i], ## DV name
+                effects$effect[i],  ## effect name
+                ifelse(effects$interaction1[i]!='', effects$interaction1[i], NA), ## interactions make unique effect key
+                ifelse(effects$interaction2[i]!='', effects$interaction2[i], NA)  ## interactions make unique effect key
+        ),collapse = '::')
+      })
+      #
+      ## Effect Names (handle duplicates)
+      effects$effect_level <- effects$effect
+      dups <- plyr::count(effects$effect) %>% filter(freq > 1)
+      if (nrow(dups)) {
+        for (i_row in 1:nrow(dups)) {
+          rename_ids <- which( effects$effect == dups$x[i_row] )
+          effects$effect_level[ rename_ids ] <- paste(dups$x[i_row], 1:dups$freq[i_row], sep='_')
+        }
+      }
+        
+      #
       return(effects)
     },
     
     get_theta_matrix = function(input_effs, iterations) {
+      # #
+      # effs <- as.data.frame(self$rsiena_effects[self$rsiena_effects$include & self$rsiena_effects$type!='rate', ])
       #
-      effs <- as.data.frame(self$rsiena_effects[self$rsiena_effects$include, ])
+      effs <- self$get_rsiena_effects_theta_df(no_rates=TRUE) 
+      #
       ## add short name for convenience as effect name
       effs$effect <- sapply(1:nrow(effs), function(i) {
         ifelse(effs$shortName[i]=='unspInt'|is.na(effs$shortName[i]), 
@@ -946,7 +1278,7 @@ SaomNkRSienaBiEnv <- R6Class(
       # effs <- self$get_rsiena_effects_df_from_structure_model(structure_model)
       # names_theta_in <- effs$effectName[effs$include][params_norates]
       theta_in        <- effs$parm
-      names(theta_in) <- effs$effect
+      names(theta_in) <- effs$effect_level
       # interaction1s   <- effs$interaction1
       # names(interaction1s) <- effs$effect
       nthetas <- length(theta_in)
@@ -963,23 +1295,87 @@ SaomNkRSienaBiEnv <- R6Class(
     },
     
     ##
+    preprocess_theta_shocks = function(theta_shocks, iterations) {
+      if (!length(theta_shocks))
+        stop('theta_shocks list is empty. No shocks to process.')
+      if (is.null(theta_shocks[[1]]$effect) && is.null(theta_shocks[[1]]$effect_level))
+        stop('theta_shocks must have either `effect` or `effect_level`')
+      #
+      effectvar <- ifelse(
+        all(sapply(theta_shocks, function(shock_item) !is.null(shock_item$effect_level) )),
+        'effect_level', ## User can provide effect_level "egoX_1","egoX_2",..., if multiple of that type of effect are shocked 
+        'effect'        ## User can provide just the effect "egoX" if only 1 of that type of effect is shocked
+      )
+      #
+      dv_name <- self$config_structure_model[[1]]$name
+      #
+      portions <- sum(sapply(theta_shocks, function(x)ifelse(is.null(x$portion),1,x$portion)))
+      chunksteps <- floor(iterations / portions)
+      remainder <- iterations - (chunksteps * portions)
+      counter <- 0
+      for (ii in seq_along(theta_shocks)) {
+        
+        if ( effectvar == 'effect_level' ) {
+          ##---------------- A. user provides `effect_level` ----------------
+          effects <- c()
+          for (jj in 1:length(theta_shocks[[ii]]$effect_level)) {
+            effects[jj] <- strsplit( theta_shocks[[ii]]$effect_level[ jj ], '_')[[1]][1]
+          }
+          theta_shocks[[ii]]$effect <- effects
+          ##-----------------------------------------------------------
+        } else {
+          ##----------------- B. User provides `effect` -----------------------------
+          effect_levels <- c()
+          dups <- plyr::count(theta_shocks[[ii]]$effect) %>% filter(freq > 1)
+          for (jj in 1:length(theta_shocks[[ii]]$effect)) {
+            effect_levels[jj] <- ifelse(nrow(dups), 
+                                        paste(theta_shocks[[ ii ]]$effect[ jj ],  jj, sep = '_'), 
+                                        theta_shocks[[ ii ]]$effect[ jj ] )
+          }
+          theta_shocks[[ii]]$effect_level <- effect_levels
+          ##-----------------------------------------------------------
+        }
+        
+        ##
+        prev_counter <-  counter
+        counter <- counter + (theta_shocks[[ii]]$portion * chunksteps)
+        start <- prev_counter + 1
+        end   <- counter
+        theta_shocks[[ii]]$chain_step_ids <- (start:end) 
+        
+        if(ii == length(theta_shocks) && remainder>0){
+          maxid <- max(theta_shocks[[ii]]$chain_step_ids, na.rm = T)
+          theta_shocks[[ii]]$chain_step_ids <- c( theta_shocks[[ii]]$chain_step_ids , (maxid+1):(maxid+remainder) )
+        }
+          
+      }
+
+      return(theta_shocks)
+    },
+    
+    ##
     shock_theta_matrix = function(theta_matrix, ## matrix[iterations, n_parameters]
                                   theta_shocks  ## list(shock1list, shock2list, ...)
                                   ) {
+      if(is.null(theta_shocks[[1]]$effect_level))
+        stop('effect_level not set in theta_shocks. First run preprocess_theta_shocks().')
+      if (is.null(theta_shocks[[1]]$chain_step_ids)) {
+        theta_shocks <- self$preprocess_theta_shocks(theta_shocks, nrow(theta_matrix))
+      }
       portions <- sum(sapply(theta_shocks, function(x)ifelse(is.null(x$portion),1,x$portion)))
       chunksteps <- floor(nrow(theta_matrix) / portions)
-      .<- lapply(seq_along(theta_shocks), function(ii){
-        start <- 1 + (ii-1) * chunksteps
-        end   <- ii * chunksteps + ((theta_shocks[[ii]]$portion - 1) * chunksteps)
-        theta_shocks[[ii]]$chain_step_ids <<- (start:end) ##**Break scope to modify input**
-      })
+      remainder <- nrow(theta_matrix) - (chunksteps * portions)
       for (i_shock in seq_along(theta_shocks)) {
-        shock_rows  <- theta_shocks[[ i_shock ]]$chain_step_ids
-        effect_col <- which(  colnames(theta_matrix)  == theta_shocks[[ i_shock ]]$effect )
-        theta_matrix[shock_rows, effect_col] <- theta_shocks[[i_shock]]$parameter
+        n_params <- length( theta_shocks[[ i_shock ]]$effect_level )
+        for (j_effect in 1:n_params) {
+          shock_rows  <- theta_shocks[[ i_shock ]]$chain_step_ids
+          theta_matrix_names <- colnames(theta_matrix)
+          effect_col <- which(  theta_matrix_names  == theta_shocks[[ i_shock ]]$effect_level[ j_effect ] )
+          if (length(shock_rows) && length(effect_col))
+            theta_matrix[shock_rows, effect_col] <- theta_shocks[[i_shock]]$parameter[ j_effect ]
+        }
       }
       ## if remainder, fill matrix remainder rows to last set row
-      remainder <- nrow(theta_matrix) - (chunksteps * portions)
       if (remainder) {
         last_set_row <- nrow(theta_matrix) - remainder
         last_set_params <- theta_matrix[last_set_row, ]
@@ -992,11 +1388,12 @@ SaomNkRSienaBiEnv <- R6Class(
     
     
     ############################################################################
-    # # structure_model 
+    # # structure_model
     # array_bi_net=NULL ## starting matrices for the simulation
     # theta_matrix=NULL ## variable theta matrix replaces parameter values in structure_model
     # iterations=1000   ## replaced by nrow(theta_matrix) if theta_matrix is not null
-    # run_seed=123 
+    # iterations_per_actor = steps_per_actor
+    # run_seed=123
     # process_chain=TRUE
     # get_eff_doc=FALSE
     # plot_save=FALSE
@@ -1008,7 +1405,8 @@ SaomNkRSienaBiEnv <- R6Class(
                              array_bi_net=NULL, ## starting matrices for the simulation
                              theta_matrix=NULL, ## variable theta matrix replaces parameter values in structure_model
                              theta_shocks=NULL, ## list of parameter shocks (effects, parameter values, portions of simulation)
-                             iterations=1000,   ## replaced by nrow(theta_matrix) if theta_matrix is not null
+                             iterations=NULL,   ## replaced by nrow(theta_matrix) if theta_matrix is not null
+                             iterations_per_actor=NULL, ## Overrides "iterations" if not NULL
                              run_seed=123, 
                              process_chain=TRUE,
                              get_eff_doc=FALSE,
@@ -1017,13 +1415,27 @@ SaomNkRSienaBiEnv <- R6Class(
                              verbose=TRUE,
                              digits=3
     ) {
+      ## Set iterations (steps in simulated decision chain; rows of theta_matrix)
+      iterations <- if (!is.null(theta_matrix)) {
+        nrow(theta_matrix)
+      } else if (!is.null(iterations_per_actor)) {
+        (iterations_per_actor * self$M)
+      } else if (!is.null(iterations)) {
+        iterations
+      } else {
+        (self$M * self$N) ## default to one complexity-scaled decision round
+      }
       
+      ##**TODO: CHECK system reset conditions**
+      self$search_matrix <- NULL
+      self$social_matrix <- NULL
+      ##
       self$config_structure_model <- structure_model
-      
+      ##
       input_effs <- self$get_input_from_structure_model(structure_model)
 
       ##--------- I. SET BIPARTITE NETWORK DV ARRAY IF NULL -----------------
-      # rsiena_model$sims[[sim_id]][[wave_id]][[bi_env_dv_id]] 
+      ## rsiena_model$sims[[sim_id]][[wave_id]][[bi_env_dv_id]] 
       ## Set up bipartite matrix RSiena dependent variable 
       if (any(is.null(array_bi_net))) {
         if(is.null(self$bipartite_matrix)) 
@@ -1045,27 +1457,32 @@ SaomNkRSienaBiEnv <- R6Class(
         cat('\n\nself$rsiena_data : \n\n')
         print(self$rsiena_data)
       }
-      ##  2. Init effects
+      ##  2.1 RSiena Effects: Init 
       self$rsiena_effects <- getEffects(self$rsiena_data)
       ## UPDATE PARAMETERS TO FIXED=FALSE so we can estimate them
-      ##  3. Add effects from model objective function list
+      ##  2.2 RSiena Effects: Add effects from model objective function list
       self$add_rsiena_effects(structure_model)
       ## set fix to FALSE for all parameters to be simulated
       # self$rsiena_effects$fix <- rep(FALSE, length(self$rsiena_effects$fix) )
-      
-      
-      ##---------- III. SET THETA MATRIX IF NULL  -----------------------------
+      if(verbose) {
+        cat('\n\nself$rsiena_effects : \n\n')
+        print(self$rsiena_effects)
+      }
+      ##---------- III. SET PARAMETERS (THETA) ------------------------------
       if(any(is.null(theta_matrix))) {
         theta_matrix <- self$get_theta_matrix(input_effs, iterations)
       }
       # HANDLE SHOCKS IF APPLICABLE
-      if(!is.null(theta_shocks) & length(theta_shocks)) {
+      if(!is.null(theta_shocks) && length(theta_shocks)) {
+        theta_shocks <- self$preprocess_theta_shocks(theta_shocks, iterations)
+        self$theta_shocks <- theta_shocks
         theta_matrix <- self$shock_theta_matrix(theta_matrix, theta_shocks)
       }
+      self$theta_matrix <- theta_matrix
       #
       if(verbose) {
-        cat('\n\n theta_matrix summary (first and last 5 rows) : \n\n')
-        print_rows <- c(1:5, (nrow(theta_matrix)-4):nrow(theta_matrix) )
+        cat('\n\n theta_matrix summary (first, middle, last 5 rows) : \n\n')
+        print_rows <- c(1:5, NA, (floor(iterations/2)-2):(floor(iterations/2)+2), NA,  (iterations-4):iterations )
         print(theta_matrix[print_rows, ])
       }
       
@@ -1073,10 +1490,8 @@ SaomNkRSienaBiEnv <- R6Class(
       ##  4. RSiena Algorithm
       self$rsiena_run_seed <- run_seed
       self$rsiena_algorithm <- sienaAlgorithmCreate(projname=file.path(self$DIR_OUTPUT, sprintf('%s_%s',self$SIM_NAME,self$TIMESTAMP)),
-                                                    simOnly = T,
-                                                    # nsub = rsiena_phase2_nsub * 1,
-                                                    nsub = 0,
-                                                    # n2start = rsiena_n2start_scale * 2.52 * (7+sum(self$rsiena_effects$include)),
+                                                    simOnly = T,  # nsub = rsiena_phase2_nsub * 1,
+                                                    nsub = 0, # n2start = rsiena_n2start_scale * 2.52 * (7+sum(self$rsiena_effects$include)),
                                                     n3 = nrow(theta_matrix),
                                                     seed = run_seed)
       ## 5. Run RSiena simulation
@@ -1098,8 +1513,7 @@ SaomNkRSienaBiEnv <- R6Class(
       
       
       ##----------- V. POST-PROCESSING OF SIMULATION RESULTS  ------------------
-      if(process_chain)
-      {
+      if(process_chain){
         ## PRocess the decision ministep chain 
         ##  (C++ output to R data.frame: reindexing C++'s 0-index Actor IDs to R's 1-index)
         self$search_rsiena_process_ministep_chain(verbose)
@@ -1118,9 +1532,165 @@ SaomNkRSienaBiEnv <- R6Class(
     ############################################################################
     
     
-    plot_snapshots = function(snapshot_ids=c(1,2)) {
+    ##_________________GOF_____________
+    add_gof_to_rsiena_shocks = function(theta_shocks=NULL) {
+      if (is.null(theta_shocks))
+        theta_shocks <- self$theta_shocks
+      #
+      par(mfrow=c(2,2))
+      for (i in 1:length(theta_shocks)) {
+        #
+        rsiena_model <- theta_shocks[[ i ]]$rsiena_model
+        #
+        gof.od <- RSiena::sienaGOF(rsiena_model, OutdegreeDistribution, levls=0:(self$N-1), varName = 'bipartite_rsienaDV')
+        print(plot(gof.od, main=sprintf('GOF: Outdegree Distribution, i=%s',i)))
+        #
+        gof.id <- RSiena::sienaGOF(rsiena_model, IndegreeDistribution, levls=0:(self$M-1), varName = 'bipartite_rsienaDV')
+        print(plot(gof.id, main=sprintf('GOF: Indegree Distribution, i=%s',i)))
+        #
+        theta_shocks[[ i ]]$convergence <- list(
+          tconv = rsiena_model$tconv, 
+          tconv_max = rsiena_model$tconv.max[1],
+          check_tconv_lt10= all( abs(rsiena_model$tconv) <  0.1 ),
+          check_tconv_max_lt25 = abs( rsiena_model$tconv.max[1] ) < 0.25,
+          check_all = ( abs(rsiena_model$tconv) <  0.1 && abs(rsiena_model$tconv.max[1]) < 0.25 )
+        )
+        print( theta_shocks[[ i ]]$convergence )
+        #
+        theta_shocks[[ i ]]$rsiena_gof <- list(OutdegreeDistribution = gof.od, IndegreeDistribution  = gof.id)
+        ##-----------------------------------
+      }
+      #
+      return( theta_shocks )
+    },
+    
+    ##
+    # n_obs=8
+    # digits=3
+    # add_gof=TRUE
+    # verbose=FALSE
+    ##
+    fit_rsiena_shocks = function(n_obs=8, digits=3, add_gof=TRUE, verbose=FALSE) {
+      if (is.null(self$theta_shocks))
+        stop('theta_shocks is not set.')
+      if (is.null(self$theta_shocks[[1]]$chain_step_ids))
+        stop('theta_shocks missing chain_step_ids.')
+      
+      limit_obs <- 30
+      max_obs <- ifelse( dim(self$bi_env_arr)[3] <= limit_obs, dim(self$bi_env_arr)[3],  limit_obs )
+        
+      theta_shocks <- self$theta_shocks
+      
+      # rsiena_model_list <- list()
+      
+      for (i in 1:length(theta_shocks)) {
+        ##
+        theta_shock <- theta_shocks[[ i ]]
+        ## all step ids in this shock period
+        shock_step_ids <- theta_shock$chain_step_ids
+        ## observation step ids to use for RSiena estimation of the model
+        obs_step_ids <- round(seq(min(shock_step_ids), max(shock_step_ids), length.out=n_obs))
+        if (length(obs_step_ids) > max_obs)
+          obs_step_ids <- obs_step_ids[ 1:max_obs ]
+        #
+        bi_env_obs <- self$bi_env_arr[ , , obs_step_ids ]
+        #
+        #
+        rsiena_model <- self$fit_rsiena_nonself(bi_env_obs, theta_shock, verbose=verbose)
+        #
+        # #
+        theta_shocks[[ i ]]$rsiena_model <- rsiena_model
+        # #
+        # # key <- as.character( ifelse(is.null(theta_shock$label), i, theta_shock$label) )
+        # # rsiena_model_list[[ key  ]] <- rsiena_model
+        # #
+      }
+      
+      if (add_gof)
+        theta_shocks <- self$add_gof_to_rsiena_shocks(theta_shocks)
+      
+      # print(screenreg(rsiena_model_list, single.row = T, digits = digits))
+      
+      ## update self$theta_shocks
+      self$theta_shocks <- theta_shocks
+      
+      return(theta_shocks)
+    },
+
+
+
+    ###
+    ###
+    # bi_env_arr = self$bi_env_arr[,,1:20]
+    ###
+    fit_rsiena_nonself = function(bi_env_arr, theta_shock=NULL, 
+                                  digits=3, iterations_multiplier=4, 
+                                  verbose=FALSE) {
+
+      if (is.null(self$rsiena_model))
+        stop('rsiena_model is missing. Run search_rsiena() before fit_rsiena')
+      if(is.null(self$rsiena_model$thetaUsed))
+        stop('rsiena_model$thetaUsed is missing. Set thetaValues=theta_matrix in siena07().')
+
+      ##---------- DATA AND EFFECTS ------------------------------
+      # 1. DV
+      bipartite_rsienaDV <- sienaDependent(bi_env_arr,
+                                          type='bipartite',
+                                          nodeSet =c('ACTORS', 'COMPONENTS'),
+                                          allowOnly = F)
+
+      ## input list of variable for RSiena model
+      input_varlist <- list(bipartite_rsienaDV=bipartite_rsienaDV)
+      ## 2. Data
+      rsiena_data <- self$get_rsiena_data_nonself(structure_model, input_varlist) ## does not affect self$... properties
+      ## 3.1 Effects: init
+      rsiena_effects <- RSiena::getEffects(rsiena_data)
+      ## 3.1 Effects: Add from structure model
+      rsiena_effects <- self$add_rsiena_effects_nonself(rsiena_effects, structure_model, theta_shock)
+
+      if(verbose) {
+        cat('\n\nself$rsiena_data : \n\n')
+        print(rsiena_effects)
+      }
+
+      ##---------- ESTIMATION  -----------------------------
+      iterations <-  self$rsiena_model$n3 * iterations_multiplier
+      ##  4. RSiena Algorithm
+      rsiena_fit_algorithm <- sienaAlgorithmCreate(projname=file.path(self$DIR_OUTPUT, sprintf('%s_%s',self$SIM_NAME,as.numeric(Sys.time())*100)),
+                                                    simOnly = FALSE,  # nsub = rsiena_phase2_nsub * 1,
+                                                    # nsub = 0, # n2start = rsiena_n2start_scale * 2.52 * (7+sum(self$rsiena_effects$include)),
+                                                    n3 = iterations,
+                                                    seed = self$rsiena_run_seed)
+      ## 5. Run RSiena simulation
+      rsiena_model <- siena07(rsiena_fit_algorithm,
+                             data = rsiena_data,
+                             effects = rsiena_effects,# thetaValues = theta_matrix,
+                             batch = TRUE,
+                             returnDeps = TRUE,
+                             # returnChains = TRUE,
+                             returnThetas = TRUE,
+                             returnDataFrame = TRUE, ##**TODO** CHECK
+                             returnLoglik = TRUE,   ##**TODO** CHECK
+                             verbose = verbose
+      )   # returnChains = returnChains
+
+
+      ##---------- POST PROCESSING  -----------------------------
+      ## 6. Print Summary and Regression Table
+      mod_summary <- summary( rsiena_model )
+      if(verbose &  !is.null(mod_summary))
+        print(mod_summary)
+
+      # print(screenreg(list(rsiena_model), single.row = T, digits = digits))
+    
+      return(rsiena_model)   
+    },
+    
+    
+    ##
+    plot_snapshots = function(snapshot_ids=c()) {
       if(!length(snapshot_ids)) 
-        return()
+        snapshot_ids <- c(1, 2, dim(self$bi_env_arr)[3]  )
       for (i in 1:length(snapshot_ids)) {
         step <- snapshot_ids[ i ]
         mat <- self$bi_env_arr[,,step]
@@ -1833,39 +2403,41 @@ SaomNkRSienaBiEnv <- R6Class(
     
     ##
     get_chain_stats_list = function() { ## 'all','statdf','bi_env_arr', 'util', 'util_diff')
-      if (is.null(self$chain_stats))
+      if ( is.null(self$rsiena_model) )
+        stop('rsiena_model missing; run simulation to compute actor utility')
+      if ( is.null(self$chain_stats) )
         stop('chain_stats missing; run simulation with returnChains=TRUE in order to compute actor utility')
       # ## actor Utility vector
       # au <- c( mat %*% self$rsiena_model$theta )
       # hist( util )
-      struct_effnames <- sapply(self$config_structure_model$dv_bipartite$effects, function(x) x$effect)
-      #
-      coCovar_effnames  <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x) x$effect)
-      varCovar_effnames <- sapply(self$config_structure_model$dv_bipartite$varCovars, function(x) x$effect)
-      coDyadCovar_effnames <- sapply(self$config_structure_model$dv_bipartite$coDyadCovars, function(x) x$effect)
-      varDyadCovar_effnames <- sapply(self$config_structure_model$dv_bipartite$varDyadCovars, function(x) x$effect)
+      # struct_effnames <- sapply(self$config_structure_model$dv_bipartite$effects, function(x) x$effect)
+      # #
+      # coCovar_effnames  <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x) x$effect)
+      # varCovar_effnames <- sapply(self$config_structure_model$dv_bipartite$varCovars, function(x) x$effect)
+      # coDyadCovar_effnames <- sapply(self$config_structure_model$dv_bipartite$coDyadCovars, function(x) x$effect)
+      # varDyadCovar_effnames <- sapply(self$config_structure_model$dv_bipartite$varDyadCovars, function(x) x$effect)
       interaction_effnames <- sapply(self$config_structure_model$dv_bipartite$interactions, function(x) x$effect)
-      ## ALL effect names
-      effnames <- unlist(c(struct_effnames, coCovar_effnames, varCovar_effnames, coDyadCovar_effnames, varDyadCovar_effnames, interaction_effnames))
-      
-      #
-      config_param_vals <- c(
-        unlist(sapply(self$config_structure_model$dv_bipartite$effects, function(x) x$parameter)),
-        unlist(sapply(self$config_structure_model$dv_bipartite$coCovars, function(x) x$parameter)),
-        unlist(sapply(self$config_structure_model$dv_bipartite$varCovars, function(x) x$parameter)),
-        unlist(sapply(self$config_structure_model$dv_bipartite$coDyadCovars, function(x) x$parameter)),
-        unlist(sapply(self$config_structure_model$dv_bipartite$varDyadCovars, function(x) x$parameter)),
-        unlist(sapply(self$config_structure_model$dv_bipartite$interactions, function(x) x$parameter))
-      )
-      names(config_param_vals) <- effnames
-      fixed_params <- c(
-        unlist(sapply(self$config_structure_model$dv_bipartite$effects, function(x) x$fix)),
-        unlist(sapply(self$config_structure_model$dv_bipartite$coCovars, function(x) x$fix)),
-        unlist(sapply(self$config_structure_model$dv_bipartite$varCovars, function(x) x$fix)),
-        unlist(sapply(self$config_structure_model$dv_bipartite$coDyadCovars, function(x) x$fix)),
-        unlist(sapply(self$config_structure_model$dv_bipartite$varDyadCovars, function(x) x$fix)),
-        unlist(sapply(self$config_structure_model$dv_bipartite$interactions, function(x) x$fix))
-      )
+      # ## ALL effect names
+      # effnames <- unlist(c(struct_effnames, coCovar_effnames, varCovar_effnames, coDyadCovar_effnames, varDyadCovar_effnames, interaction_effnames))
+      # 
+      # #
+      # config_param_vals <- c(
+      #   unlist(sapply(self$config_structure_model$dv_bipartite$effects, function(x) x$parameter)),
+      #   unlist(sapply(self$config_structure_model$dv_bipartite$coCovars, function(x) x$parameter)),
+      #   unlist(sapply(self$config_structure_model$dv_bipartite$varCovars, function(x) x$parameter)),
+      #   unlist(sapply(self$config_structure_model$dv_bipartite$coDyadCovars, function(x) x$parameter)),
+      #   unlist(sapply(self$config_structure_model$dv_bipartite$varDyadCovars, function(x) x$parameter)),
+      #   unlist(sapply(self$config_structure_model$dv_bipartite$interactions, function(x) x$parameter))
+      # )
+      # names(config_param_vals) <- effnames
+      # fixed_params <- c(
+      #   unlist(sapply(self$config_structure_model$dv_bipartite$effects, function(x) x$fix)),
+      #   unlist(sapply(self$config_structure_model$dv_bipartite$coCovars, function(x) x$fix)),
+      #   unlist(sapply(self$config_structure_model$dv_bipartite$varCovars, function(x) x$fix)),
+      #   unlist(sapply(self$config_structure_model$dv_bipartite$coDyadCovars, function(x) x$fix)),
+      #   unlist(sapply(self$config_structure_model$dv_bipartite$varDyadCovars, function(x) x$fix)),
+      #   unlist(sapply(self$config_structure_model$dv_bipartite$interactions, function(x) x$fix))
+      # )
       
       ## Use system bipartite matrix as start
       bi_env_mat <- self$bipartite_matrix
@@ -1880,13 +2452,33 @@ SaomNkRSienaBiEnv <- R6Class(
       nchains <- nrow(tiechdf)
       
       ## paramters
-      theta   <- self$rsiena_model$theta
-      ## replace fixed theta param with given param values (instead of zero default when effect is fixed)
-      if (any(fixed_params)) 
-        theta[ fixed_params ] <- config_param_vals[ fixed_params ]
+      # theta   <- self$rsiena_model$theta
+      ##
+      theta_df_norates <- self$get_rsiena_effects_theta_df(no_rates=TRUE)
+      theta_names_norate <-  theta_df_norates$shortName
+      theta_levels_norates <- theta_df_norates$effect_level
+      # theta_names_norate <- theta_names[ ! grepl('rate', theta_names, ignore.case = T) ]
+      ##
+      if(is.null(self$rsiena_model$thetaUsed)){
+        ## Get theta in the order of rsiena_effect object
+        theta <- theta_df_norates$parm
+        names(theta) <- theta_df_norates$shortName
+        # inputs <- self$get_input_from_structure_model(self$config_structure_model)
+        # theta <- inputs$parameter[ inputs$effect %in% theta_names_norate ]
+        ## replace fixed theta param with given param values (instead of zero default when effect is fixed)
+        # if (any(fixed_params)) theta[ fixed_params ] <- config_param_vals[ fixed_params ]
+        theta_mat <- matrix(rep(theta,self$rsiena_model$n3), byrow = T, nrow = self$rsiena_model$n3)
+      }else{
+        theta_mat <- self$rsiena_model$thetaUsed
+      }
       #
-      ntheta <- length(theta)
+      colnames(theta_mat) <- theta_names_norate
+      ntheta <-  dim(theta_mat)[2]
+      #
       
+      if (nrow(theta_mat) != nchains) {
+        stop('DEBUG: theta_mat rows not equal to tiechange dataframe rows.')
+      }
       
       bi_env_arr <- array(NA, dim=c(self$M, self$N, nchains))
       #
@@ -1901,8 +2493,11 @@ SaomNkRSienaBiEnv <- R6Class(
       # statdf <- data.frame()
       # utildf <- data.frame()
       # util_diff <- data.frame()
+      
       for (i in 1:nchains) {
+        
         mstep <- tiechdf[i,]
+        
         # cat(sprintf('\n %.2f%s i=%s, j=%s', 100*i/nchains,'%', mstep$id_from,  mstep$id_to))
         if(i %% 100 == 0) cat(sprintf('\n %.2f%s', 100*i/nchains,'%'))
         ## update bipartite environment matrix for one step (self$toggle one dyad)
@@ -1920,14 +2515,17 @@ SaomNkRSienaBiEnv <- R6Class(
         ### ADD INTERACTIONS
         if (length(interaction_effnames)) {
           for (int_i in 1:length(interaction_effnames)) {
+            stop('TODO: Interactions need to be checked for multiple effects of same type.')
             vars <- strsplit(interaction_effnames[int_i],'[|]')[[1]]
             statmat[ , interaction_effnames[int_i] ] <- statmat[ , vars[1] ] *  statmat[ , vars[2] ]
           }
         }
         #
-        step_statgrid <- expand.grid(chain_step_id=i, actor_id=1:self$M, effect_id=1:ntheta)
+        step_statgrid <- expand.grid(chain_step_id=i, actor_id=1:self$M, effect_level=theta_levels_norates )
+        step_statgrid$effect_name <- sapply(step_statgrid$effect_level, function(eff_lvl)theta_df_norates$shortName[which(theta_df_norates$effect_level==eff_lvl)])
         step_statgrid$value <- c( statmat )
-        step_statgrid$value_contributions <- c(sweep(statmat, 2, theta, "*")) ## multiply each actor row (margin=2) of statistics by the theta vector
+        # step_statgrid$value_contributions <- statmat * theta_mat 
+        step_statgrid$value_contributions <- c(sweep(statmat, 2, theta_mat[i, ], "*")) ## multiply each actor row (margin=2) of statistics by the theta vector
         step_statgrid$stability <- mstep$stability
         #
         stats_li[[i]] <- step_statgrid   ##**CHECK list**
@@ -1949,7 +2547,7 @@ SaomNkRSienaBiEnv <- R6Class(
         #
         # stat_arr[ , , i] <- statmat
         ## Add utilities to array
-        util <- c( statmat %*% theta )
+        util <- c( statmat %*% theta_mat[i, ] )
         # utildf <- rbind(utildf, data.frame(
         #   utility = util,
         #   chain_step_id = i, 
@@ -2009,7 +2607,7 @@ SaomNkRSienaBiEnv <- R6Class(
       stats_df <- data.table::rbindlist( stats_li )
       stats_df$actor_id <- as.factor(stats_df$actor_id)
       stats_df$strategy <- as.factor( actor_strats[ stats_df$actor_id ] )
-      stats_df$effect_name <- as.factor(effnames[ stats_df$effect_id ])
+      # stats_df$effect_name <- as.factor(effnames[ stats_df$effect_id ])
       ## Actor Utility  long dataframe
       util_df <- data.table::rbindlist( util_li ) 
       util_df$actor_id <- as.factor(util_df$actor_id)
@@ -4248,8 +4846,9 @@ SaomNkRSienaBiEnv <- R6Class(
     # Replace component numbers with labels in the heatmap data frame
     component_df$Component1 <- factor(component_df$Component1, labels = component_labels)
     component_df$Component2 <- factor(component_df$Component2, labels = component_labels)
+    # component_df <- component_df[order(component_df$Component2, decreasing = TRUE), ]
     
-    heatmap_plot <- ggplot(component_df, aes(x = Component1, y = Component2, fill = Interaction)) +
+    heatmap_plot <- ggplot(component_df, aes(x = Component1, y = forcats::fct_rev(Component2), fill = Interaction)) +
       geom_tile() +
       # scale_fill_gradient(low = "white", high = "red") +
       labs(title = "[Proj2] Component Heatmap\n(Epistatic Interactions)", x = "Component 1", y = "Component 2") +
@@ -4359,159 +4958,130 @@ SaomNkRSienaBiEnv <- R6Class(
     # nstep <- length(unique(actthin$chain_step_id))
     npoints <- nrow(self$chain_stats) * self$M
     #
-    point_size <- 6 / log10( npoints )
-    point_alpha <- min( 1,  2.2/log( npoints ) )
+    point_size <- 4 / log10( npoints )
+    point_alpha <- min( 1,  1/log( npoints ) )
     #
     suppressMessages({
       plt.act <- tmpdf %>%       #ungroup() %>%
-        ggplot(aes(x=chain_step_id, y=utility, color=strategy)) +  #
-        geom_point(aes(shape=actor_id), alpha=point_size, shape=1, size= point_size) +
-        geom_smooth(aes(fill=strategy), 
+        ggplot(aes(x=chain_step_id, y=utility)) +  #
+        geom_point(aes(shape=actor_id, color=strategy), alpha=point_size, shape=1, size= point_size) +
+        geom_smooth(aes(fill=strategy, color=strategy), 
                     method='loess', span=loess_span, alpha=.1) +
-        geom_smooth(aes(x=chain_step_id, y=mean), 
+        geom_smooth(aes(x=chain_step_id, y=mean, color=strategy), 
                     method='loess', color='black', span=loess_span, alpha=.05, linewidth=1.1,
                     data=actthin %>% group_by(chain_step_id) %>% dplyr::summarize(mean=mean(utility, na.rm=T)) %>% 
                       mutate(strategy=NA)) +
         geom_hline(yintercept = 0, linetype=4, color='black') +
+        ggtitle("Average Utility by Strategy") +
         theme_bw()
     })
     
-    if (length(xints)) 
-      plt.act <- plt.act + geom_vline(xintercept=xints, linetype=1, color='black') 
+    if (!is.null(self$theta_shocks)) {
+      suppressMessages({
+        layout <- ggplot_build(plt.act)$layout
+      })
+      shock_rects <- self$get_theta_shock_rects_df(self$theta_shocks) %>%
+        mutate(utility=0, chain_step_id=0, effect_name=NULL, effect=NULL)
+      y_maxs <- unlist(lapply(layout$panel_params, function(x) rep(  max(x$y.range),  nrow(shock_rects)) ))
+      plt.act <- plt.act + 
+        geom_rect(data=shock_rects, aes(xmin=start, xmax=end, ymin=-Inf, ymax=Inf), fill='darkorange', color='orange',linetype=2, alpha=.08) + 
+        geom_text(data = shock_rects, aes(x = (start + end) / 2, y = y_maxs, label = label),
+                  vjust = 1, size = 3) #fontface = "bold"
+    }
+    
+    # if (length(xints)) 
+    #   plt.act <- plt.act + geom_vline(xintercept=xints, linetype=1, color='black') 
     
     if (return_plot)
       return(plt.act)
     
   },
-
-
-  ##
-  plot_utility_components = function(use_contributions=TRUE, loess_span=0.5, return_plot=TRUE, save_plot=FALSE) {
+  
+  get_structure_model_params = function(){
     #
     structure_model <- self$config_structure_model
+    dv_bipartite <- structure_model$dv_bipartite
+    dv_name <- dv_bipartite$name    
     ##==================================================
     #
     # eff <- m1$rsiena_effects[m1$rsiena_effects$include, ]
     efflist <- c(
-      structure_model$dv_bipartite$effects,
-      structure_model$dv_bipartite$coCovars,
-      structure_model$dv_bipartite$varCovars,
-      structure_model$dv_bipartite$coDyadCovars,
-      structure_model$dv_bipartite$varDyadCovars,
-      structure_model$dv_bipartite$interactions
+      dv_bipartite$effects,
+      dv_bipartite$coCovars,
+      dv_bipartite$varCovars,
+      dv_bipartite$coDyadCovars,
+      dv_bipartite$varDyadCovars,
+      dv_bipartite$interactions
     )
     #
     neffs <- length(efflist)
     ### empty matrix to hold actor network statistics
     effnames <- sapply(efflist, function(x) x$effect, simplify = T)
     effparams <- sapply(efflist, function(x) x$parameter, simplify = T)
-    
+    #
     names(effparams) <- effnames
-    
-    
-    dv_bipartite <- self$config_structure_model$dv_bipartite
-    dv_name <- dv_bipartite$name    
-    
+    #
     ACTORS     <- sienaNodeSet(self$M, nodeSetName="ACTORS")
     COMPONENTS <- sienaNodeSet(self$N, nodeSetName="COMPONENTS")
     # strat_mat_varCovar <- varCovar(strat_eff$x, nodeSet = 'ACTORS')
     if (! 'coCovars' %in% names(dv_bipartite) ) {
-      rsiena_data <- sienaDataCreate(list(self$bipartite_rsienaDV), nodeSets = list(ACTORS, COMPONENTS))
-      return(rsiena_data)
+      stop('dv_bipartite has no coCovars. Check structure_model.')
+      # rsiena_data <- sienaDataCreate(list(self$bipartite_rsienaDV), nodeSets = list(ACTORS, COMPONENTS))
+      # return(rsiena_data)
     }
-
-    
-    
+    #
     structeffs <- sapply(dv_bipartite$effects, function(x)x$parameter)
     names(structeffs) <- sapply(dv_bipartite$effects, function(x)x$effect)
-    
-    # coCovarParams     <- sapply(dv_bipartite$coCovars, function(x)x$effect)
-    # varCovarParams     <- sapply(dv_bipartite$varCovars, function(x)x$effect)
-    # coDyadCovarParams  <- sapply(dv_bipartite$coDyadCovars, function(x)x$effect)
-    # varDyadCovarParams <- sapply(dv_bipartite$varDyadCovars, function(x)x$effect)
-    
+    #
     coCovars     <- sapply(dv_bipartite$coCovars, function(x)x$effect)
     varCovars     <- sapply(dv_bipartite$varCovars, function(x)x$effect)
     coDyadCovars  <- sapply(dv_bipartite$coDyadCovars, function(x)x$effect)
     varDyadCovars <- sapply(dv_bipartite$varDyadCovars, function(x)x$effect)
     interactions <- sapply(dv_bipartite$interactions, function(x)x$effect)
-    
+    #
     coCovars_param     <- sapply(dv_bipartite$coCovars, function(x)x$parameter)
     varCovars_param     <- sapply(dv_bipartite$varCovars, function(x)x$parameter)
     coDyadCovars_param  <- sapply(dv_bipartite$coDyadCovars, function(x)x$parameter)
     varDyadCovars_param <- sapply(dv_bipartite$varDyadCovars, function(x)x$parameter)
     interactions_param <- sapply(dv_bipartite$interactions, function(x)x$parameter)
-    
+    #
     covs <- unlist(c(coCovars_param, varCovars_param, coDyadCovars_param,  varDyadCovars_param, interactions_param))
     names(covs) <- unlist(c(coCovars, varCovars, coDyadCovars, varDyadCovars, interactions))
-    
+    #
     coCovarTypes     <- sapply(dv_bipartite$coCovars, function(x)x$interaction1)
     varCovarTypes     <- sapply(dv_bipartite$varCovars, function(x)x$interaction1)
     coDyadCovarTypes  <- sapply(dv_bipartite$coDyadCovars, function(x)x$interaction1)
     varDyadCovarTypes <- sapply(dv_bipartite$varDyadCovars, function(x)x$interaction1)
     # interactionTypes <- sapply(dv_bipartite$interactions, function(x)x$interaction1)
-    
+    #
     vartypes <- unlist(c(coCovarTypes, varCovarTypes, coDyadCovarTypes, varDyadCovarTypes))
+    #
     component_type_ids <-  grep('self\\$component.+var', vartypes)
     strat_type_ids <-  grep('self\\$strat.+var', vartypes)
-    
-    # interact_types <- sapply(dv_bipartite$interactions, function(x)x$effect)
-    interact_type_ids <- sapply(seq_along(dv_bipartite$interactions), function(i)i)
-    
-    # component_coCovar_ids     <- grep('self\\$component.+_coCovar', coCovarTypes) ## ex: "self$component_1_coCovar"
-    # component_varCovar_ids    <- grep('self\\$component.+_varCovar', varCovarTypes) ## ex: "self$component_1_coCovar"
-    # component_coDyadCovar_ids  <- grep('self\\$component.+_coDyadCovar', coDyadCovarTypes) ## ex: "self$component_1_coCovar"
-    # component_varDyadCovar_ids <- grep('self\\$component.+_varDyadCovar', varDyadCovarTypes) ## ex: "self$component_1_coCovar"
-    
-    # strat_coCovar_ids     <- grep('self\\$strat.+_coCovar', coCovarTypes) ## ex: "self$component_1_coCovar"
-    # strat_varCovar_ids    <- grep('self\\$strat.+_varCovar', varCovarTypes) ## ex: "self$component_1_coCovar"
-    # strat_coDyadCovar_ids  <- grep('self\\$strat.+_coDyadCovar', coDyadCovarTypes) ## ex: "self$component_1_coCovar"
-    # strat_varDyadCovar_ids <- grep('self\\$strat.+_varDyadCovar', varDyadCovarTypes) ## ex: "self$component_1_coCovar"
-    # stratDV_ids     <- grep('self\\$strat_\\d{1,2}_coCovar', covDvTypes ) ## ex: "self$strat_1_coCovar"
-    
-    # ncompo_coCovar     <- length( component_coCovar_ids )
-    # ncompo_varCovar    <- length( component_varCovar_ids )
-    # ncompo_coDyadCovar  <- length( component_coDyadCovar_ids )
-    # ncompo_varDyadCovar <- length( component_varDyadCovar_ids )
-    # 
-    # nstrat_coCovar     <- length( strat_coCovar_ids )
-    # nstrat_varCovar    <- length( strat_varCovar_ids )
-    # nstrat_coDyadCovar  <- length( strat_coDyadCovar_ids )
-    # nstrat_varDyadCovar <- length( strat_varDyadCovar_ids )
-    
-    
-    # compo_vars <- c()
-    
-  
-    ## actor strategy
-    # if ( attr(self$strat_1_coCovar, 'nodeSet') != 'ACTORS' )
-    #   stop("Actor Strategy self$strat_1_coCovar not set.")
-    # actor_strat_lvls <- as.factor( self$get_actor_strategies() )
-    # actor_strats <- rep(actor_strat_lvls, times = round(self$M/length(actor_strat_lvls)))
     #
-    nstep <- sum(!self$chain_stats$stability)
-
-    # ## levels order
-    # coveffs   <- sapply(dv_bipartite$coCovars, function(x)x$effect)
-    # covparams <- sapply(dv_bipartite$coCovars, function(x)x$parameter)
-    # covfixs   <- sapply(dv_bipartite$coCovars, function(x)ifelse(x$fix,'','(var)'))
-    # #
-    # strateffs   <- sapply(dv_bipartite$coCovars, function(x)x$effect)
-    # stratparams <- sapply(dv_bipartite$coCovars, function(x)x$parameter)
-    # stratfixs   <- sapply(dv_bipartite$coCovars, function(x)ifelse(x$fix,'','(var)'))
-    # # stratfixs   <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)substr(as.character(x$fix),1,1))
-    # #
-    # structeffs   <- sapply(dv_bipartite$effects, function(x)x$effect)
-    # structparams <- sapply(dv_bipartite$effects, function(x)x$parameter)
-    # structfixs   <- sapply(dv_bipartite$effects, function(x)ifelse(x$fix,'','(var)'))
-    # # structfixs   <- sapply(self$config_structure_model$dv_bipartite$effects, function(x)substr(as.character(x$fix),1,1))
-    
-    # covDvTypes <- sapply(self$config_structure_model$dv_bipartite$coCovars, function(x)x$interaction1)
-    # componentDV_ids <- grep('self\\$component.+var', covDvTypes) ## ex: "self$component_1_coCovar"
-    # stratDV_ids     <- grep('self\\$strat.+var', covDvTypes ) ## ex: "self$strat_1_coCovar"  
-    
-    
-    
+    interact_type_ids <- (1:length(covs))[ -unique(c(component_type_ids, strat_type_ids)) ]
+    #
+    return(list(
+      structeffs=structeffs,
+      # Covariates
+      covs=covs,
+      component_type_ids=component_type_ids,
+      strat_type_ids=strat_type_ids,
+      interact_type_ids=interact_type_ids
+    ))
+  },
+  
+  #
+  get_structure_model_param_str = function(params=NULL) {
+    if(is.null(params)) {
+      params <- self$get_structure_model_params()
+    }
+    #
+    structeffs <- params$structeffs
+    covs <- params$covs
+    component_type_ids <- params$component_type_ids
+    strat_type_ids <- params$strat_type_ids
+    interact_type_ids <- params$interact_type_ids
     #
     sim_title_str <- sprintf(
       'Environment: Actors (M) = %s, Components (N) = %s, Init.P. = %.2f\nStructure:  %s\nComponent Payoff: %s\nActor Strategy:  %s\nInteractions:  %s', 
@@ -4519,35 +5089,139 @@ SaomNkRSienaBiEnv <- R6Class(
       paste( paste(paste(names(structeffs), structeffs, sep='= '), sep=''), collapse = ';  '),
       paste( paste(paste(names(covs)[component_type_ids], covs[component_type_ids], sep='= '), sep=''), collapse = ';  '),
       paste( paste(paste(names(covs)[strat_type_ids], covs[strat_type_ids], sep='= '), sep='' ), collapse = ';  '),
-      paste( paste(paste(interactions, interactions_param, sep='= '), sep='' ), collapse = ';  ')
+      paste( paste(paste(names(covs)[interact_type_ids], covs[interact_type_ids], sep='= '), sep='' ), collapse = ';  ')
     )
-    # #
-    # compoeffs   <- coveffs[ componentDV_ids ]
-    # compoparams <- covparams[ componentDV_ids ]
-    # compofixs   <- covfixs[ componentDV_ids ]
-    # #
-    # strateffs   <- coveffs[ stratDV_ids ]
-    # stratparams <- covparams[ stratDV_ids ]
-    # stratfixs   <- covfixs[ stratDV_ids ]
-    efflvls <- c('utility', 
-                 names(structeffs),
-                 names(covs)[component_type_ids],
-                 names(covs)[strat_type_ids], 
-                 interactions
-                 )
-    ##=================================================
-    ##--------------------------------------------------------------
-    ## 2. Strategy Signals
-    ##--------------------------------------------------------------
-    actor_strats <- self$get_actor_strategies()
+    return(sim_title_str)
+  },
+  
+  # get_theta_shocks_list = function() {
+  #   if(is.null(self$rsiena_model) || is.null(self$rsiena_model$thetaUsed))
+  #     stop('self$rsiena_model not yet set. First run $search_rsiena()')
+  #   params <- self$get_structure_model_params()
+  #   theta_mat <- self$rsiena_model$thetaUsed
+  #   colnames(theta_mat) <- c(names(params$structeffs), names(params$covs))
+  #   rownames(theta_mat) <- 1:nrow(theta_mat)
+  #   theta_cnts <- theta_mat %>% as_tibble() %>% mutate(chain_step_id=row_number()) %>% 
+  #     pivot_longer(cols = !c('chain_step_id'), names_to = 'effect') %>%
+  #     group_by(effect, value) %>%
+  #     dplyr::summarize(cnt=n()) 
+  #   #
+  #   cnt_shocked_thetas <- plyr::count(theta_cnts$effect)
+  #   #
+  #   theta_cnts$is_shocked <- theta_cnts$effect %in% cnt_shocked_thetas$x[ cnt_shocked_thetas$freq > 1 ]
+  # },
+  
+  find_constant_spans_in_vec = function(vec) {
+    # Find where values change
+    change_points <- c(TRUE, vec[-1] != vec[-length(vec)], TRUE)
+    # Get start and end indices of each run
+    starts <- which(change_points[-length(change_points)])
+    ends <- which(change_points[-1]) + 1 #- 1
     #
+    is_shocked <- length(starts) > 1
+    span_id <- if(is_shocked) { 1:length(starts) } else { NA }
+    # Store results in a data frame
+    result <- data.frame(value = vec[starts], 
+                         start = starts,
+                         end = ends, 
+                         is_shocked = is_shocked,
+                         span_id = span_id)
+    return(result)
+  },
+  
+  get_theta_shock_rects_df = function(theta_shocks, filter_shocks_on=TRUE) {
+    if (is.null(self$rsiena_model) || is.null(self$rsiena_model$thetaUsed))
+      stop('rsiena_model not set or thetaUsed missing from model. Check siena07 function call.')
+    #
+    theta_matrix <- self$rsiena_model$thetaUsed
+    #
+    if(is.null(theta_shocks[[1]]$chain_step_ids)){
+      theta_shocks <- self$preprocess_theta_shocks(theta_shocks, nrow(theta_matrix))
+    }
+    #
+    row_ids <- unlist(sapply(theta_shocks, function(x)x$chain_step_ids))
+    if ( ! length(intersect(row_ids, 1:nrow(theta_matrix))) == nrow(theta_matrix) ) {
+      stop('chain_step_ids in theta_shocks list do not cover all rows of thetaUsed=theta_matrix.')
+    }
+    #
+    if(filter_shocks_on)
+      theta_shocks <- theta_shocks[ sapply(theta_shocks,function(x)x$shock_on==1) ]
+    #
+    theta_shock_df <- theta_shocks %>% ldply(.fun = function(x){
+      first_step <-  min(x$chain_step_ids, na.rm=T)
+      last_step <-  max(x$chain_step_ids, na.rm=T)
+      shock_label <- ifelse( !is.null(x$label), 
+                             x$label,  
+                             paste(paste(x$effect, x$parameter, sep='='), collapse = '; ') )
+      data.frame(
+        # effect=paste(unique(x$effect),collapse = '|'),
+        # effect_key=paste(x$effect_key,collapse = '|'), 
+        # effect_level=paste(unique(x$effect_level),collapse = '|'),
+        # effect=NA,
+        # effect_level=NA,
+        # effect = x$effect[1],
+        # effect_level = x$effect_level[1],
+        effect_all = paste(x$effect,collapse = ';'),
+        effect_level_all = paste(x$effect_level,collapse = ';'),
+        parameter=paste(x$parameter,collapse = '|'), 
+        portion=paste(x$portion,collapse = '|'), 
+        shock_on=paste(x$shock_on,collapse = '|'), 
+        start = first_step,
+        end = ifelse(last_step==nrow(theta_matrix), last_step, last_step + 1),
+        first_chain_step_id = first_step,
+        last_chain_step_id = last_step,
+        label = shock_label
+      )
+    }, .id = 'span_id')
+    # #
+    # modeleffs <- self$rsiena_effects$parm[self$rsiena_effects$include]
+    # names(modeleffs) <-  self$rsiena_effects$shortName[self$rsiena_effects$include]
+    # #
+    # rate_ids <- grep('rate',names(modeleffs), ignore.case = T)
+    # non_rate_ids <- (1:length(modeleffs))[-rate_ids]
+    # #
+    # non_rate_effs <- modeleffs[ non_rate_ids ]
+    # #
+    # # shockdf <- lapply(self$theta_shocks, as.data.frame) %>% ldply()
+    # theta_matrix <- self$rsiena_model$thetaUsed
+    # rownames(theta_matrix) <- 1:nrow(theta_matrix)
+    # colnames(theta_matrix) <- names(non_rate_effs)[!grepl('rate',names(non_rate_effs),ignore.case = T)]
+    # theta_shock_all_df <- apply(theta_matrix, 2, self$find_constant_spans_in_vec) %>% ldply()
+    # theta_shock_df <- theta_shock_all_df %>% filter(is_shocked) %>% mutate(chain_step_id=1)
+    # theta_shock_df$shock_on <- sapply(1:nrow(theta_shock_df),function(i) {
+    #   theta_shock_df$value[i] != non_rate_effs[ theta_shock_df$`.id`[i] ]
+    # })
+    # 
+    
+    return( theta_shock_df )
+  },
+
+  ##
+  # use_thetas=TRUE
+  # loess_span=0.5
+  # return_plot=TRUE
+  # save_plot=FALSE
+  ##
+  plot_utility_contributions = function(use_thetas=TRUE, loess_span=0.5,
+                                        return_plot=TRUE, save_plot=FALSE) {
+    ##
+    theta_df_norates <- self$get_rsiena_effects_theta_df(no_rates=TRUE)
+    theta_levels_norate <-  theta_df_norates$effect_level
+    #
+    # params <- self$get_structure_model_params()
+    sim_title_str <- self$get_structure_model_param_str()
+    #
+    efflvls <- c('UTILITY', theta_levels_norate )
+    #
+    actor_strats <- self$get_actor_strategies()
     actor_stats_df <- self$actor_stats_df
     actor_stats_df$strategy <- actor_strats[ actor_stats_df$actor_id ]
     #
     actor_util_df <- self$actor_util_df  %>% mutate(
       effect_id=NA, 
       value=utility, 
-      effect_name='utility', 
+      effect_name='UTILITY', 
+      effect_level='UTILITY', 
       strategy= actor_strats[ actor_id ], 
       utility=NULL
     )
@@ -4555,36 +5229,52 @@ SaomNkRSienaBiEnv <- R6Class(
     plt_title <- sprintf('Actor Utility Statistics Decomposition:\n%s', sim_title_str)
     
     ## use actor stats contributions to utility instead of original stats
-    if (use_contributions) {
+    if (use_thetas) {
       actor_stats_df <- actor_stats_df %>% mutate(value=value_contributions)
-      plt_title <- sprintf('Actor Utility Contributions (statistics * betas):\n%s', sim_title_str)
+      plt_title <- sprintf('Actor Utility Contributions (statistic * theta):\n%s', sim_title_str)
     } 
     
     ## Add utility as extra 'effect' 
     act_effs <- actor_stats_df %>% bind_rows( actor_util_df ) 
-    act_effs$effect_name <- factor(act_effs$effect_name, levels=efflvls)
+    #
+    act_effs$effect_level <- factor(act_effs$effect_level, levels=efflvls)
+    # act_effs$effect_name <- as.factor(act_effs$effect_name)
     
     #plot signals
     thinplt2 <- 1
-    
     act_effs2 <- act_effs %>% filter(chain_step_id %% thinplt2 == 0)
     
     # nstep <- length(unique(act_effs2$chain_step_id))
     npoints <- nrow(self$chain_stats) * self$M
     #
     point_size <- 4 / log10( npoints )
-    point_alpha <- min( 1,  2.2/log( npoints ) )
+    point_alpha <- min( 1,  15/sqrt( npoints ) )
+    
+    plt2 <- act_effs2  %>%  ggplot(aes(x=chain_step_id, y=value)) 
     
     suppressMessages({
-      plt2 <- act_effs2  %>% 
-        ggplot(aes(x=chain_step_id, y=value, color=strategy,fill=strategy, linetype=strategy)) + 
-        geom_point(alpha=point_alpha, shape=1, size= point_size )  + 
-        geom_smooth(method='loess', alpha=.1, span=loess_span) +
-        facet_grid(effect_name ~ ., scales='free_y') +
-        theme_bw() + theme(legend.position = 'bottom') +
-        ggtitle(plt_title)
+      plt2 <- plt2 + 
+          geom_point(aes(color=strategy,fill=strategy), alpha=point_alpha, shape=1, size= point_size )  + 
+          geom_smooth(aes(color=strategy,fill=strategy, linetype=strategy), method='loess', alpha=.1, span=loess_span) +
+          facet_grid(effect_level ~ ., scales='free_y') +
+          theme_bw() + theme(legend.position = 'bottom') +
+          ggtitle(plt_title)
     })
     
+    # plt2  
+    
+    if (!is.null(self$theta_shocks)) {
+      suppressMessages({
+        layout <- ggplot_build(plt2)$layout
+      })
+      shock_rects <- self$get_theta_shock_rects_df(self$theta_shocks)%>%mutate(value=0, chain_step_id=0)
+      y_maxs <- unlist(lapply(layout$panel_params, function(x) rep(  max(x$y.range),  nrow(shock_rects)) ))
+      plt2 <- plt2 + geom_rect(data=shock_rects, aes(xmin=start, xmax=end, ymin=-Inf, ymax=Inf),
+                               fill='darkorange', color='orange',linetype=2,  alpha=.05)
+      plt2 <- plt2 + geom_text(data = shock_rects, aes(x = (start + end) / 2, y = y_maxs, label = label),
+                              vjust = 1, size = 2.7) #fontface = "bold"
+    }
+  
     plotname2 <- sprintf('plot_actor_utility_components_thin%s_%s.png',thinplt2, round(as.numeric(Sys.time())*100) )
     
     if (save_plot) {
@@ -4595,8 +5285,104 @@ SaomNkRSienaBiEnv <- R6Class(
     
     if (return_plot)
       return(plt2)
-    
   },
+  
+  
+  get_component_strategy_by_actors = function(actor_strats, tiebreak='rand') {
+    cnts <- plyr::count(actor_strats)
+    cntsmax <- cnts[which(cnts$freq == max(cnts$freq)), ]
+    #
+    strategy <- NA
+    if (tiebreak == 'rand') {
+      
+      set.seed(self$rsiena_env_seed)
+      sample_id <- sample(1:nrow(cntsmax), 1)
+      strategy <- cntsmax$x[sample_id] 
+      
+    } else {
+      stop('tiebreak not supported')
+    }
+    #
+    return(strategy)
+  },
+  
+  
+  ##
+  plot_degree_4panel = function(loess_span=0.5, return_plot=TRUE) {
+    #
+    sim_title_str <- self$get_structure_model_param_str()
+    #
+    Kdf <- self$K_B1_df %>% mutate(effect='K_B1', node_type='Actor', dyad_type='2-mode  (bipartite)')  %>% 
+      bind_rows( self$K_A_df %>% mutate(effect='K_A', node_type='Actor', dyad_type='1-mode  (projected)')  ) %>%
+      bind_rows( self$K_B2_df %>% mutate(effect='K_B2', node_type='Component', dyad_type='2-mode  (bipartite)') ) %>% 
+      bind_rows( self$K_C_df %>% mutate(effect='K_C', node_type='Component', dyad_type='1-mode  (projected)')  ) 
+    #
+    Kdf$dyad_type <- factor(Kdf$dyad_type, levels=c('2-mode  (bipartite)','1-mode  (projected)'))
+    ## fill in node_id for actor_id or component_id depending upon node type
+    Kdf$node_id <- apply(Kdf[,c('actor_id','component_id')], 1, function(x)na.omit(x)[1])
+    Kdf$node_id <- factor(Kdf$node_id, levels=sort(unique(as.numeric(Kdf$node_id))))
+    
+    Kdf$component_id <- as.numeric(Kdf$component_id)
+    ##
+    # avg_mat[ avg_mat >=0.5 ] <- 1
+    # avg_mat[ avg_mat < 0.5 ] <- 0
+    #
+    actor_strats <- self$get_actor_strategies()
+    avg_mat <- apply(self$bi_env_arr, c(1,2), mean) 
+    component_actor_strats <- actor_strats[ apply(avg_mat, 2, which.max) ]
+
+    ## user actor strategy for color group loess curve
+    Kdf$node_group <- NA
+    Kdf$node_group[which(Kdf$node_type=='Component')] <-  sapply( Kdf$component_id[which(Kdf$node_type=='Component')], function(id){
+      component_actor_strats[ id ]
+    })
+    #
+    Kdf$node_group[which(Kdf$node_type=='Actor')] <- as.character(Kdf$strategy[which(Kdf$node_type=='Actor')])
+    
+    # nstep <- length(unique(Kdf2$chain_step_id))
+    npoints <- nrow(self$chain_stats) * self$M
+    #
+    point_size <- 6 / log10( npoints )
+    point_alpha <- min( 1,  15/sqrt( npoints ) )
+    
+    suppressMessages({
+      plt <- Kdf %>% 
+        ggplot(aes(x=chain_step_id, y=value)) +
+        geom_point(aes(fill=node_group, color=node_group), 
+                   pch=1, alpha=point_alpha, size=point_size) + 
+        # geom_smooth(aes(fill=node_group, color=node_group, linetype=node_group), ##**node_group** to color actors by strategy but components by node
+        #             method='loess', alpha=.1, span=loess_span) + 
+        geom_smooth(aes(group=node_group, color=node_group, fill=node_group), ##**node_group** to color actors by strategy but components by node
+                    method='loess', alpha=.05, span=loess_span) + 
+        geom_smooth(aes(x=chain_step_id, y=mean), span=loess_span, 
+                    data=Kdf %>% group_by(chain_step_id, node_type, dyad_type) %>% dplyr::summarize(mean=mean(value)),
+                    method='loess', se=F, color='black', size=1) +
+        geom_hline(yintercept = 0, linetype=2) +
+        scale_y_continuous(position = 'right') +
+        facet_grid(  dyad_type ~ node_type,  switch = 'y') +
+        theme_bw() + theme(strip.placement = 'inside', legend.position = 'bottom') +
+        labs(group='Strategy', fill='Strategy',color='Strategy') +
+        ylab('Node Degree') +
+        ggtitle(sprintf('Actor and Component Degrees: K_A, K_B1, K_B2, K_C\n%s', sim_title_str))
+    })
+    
+    if (!is.null(self$theta_shocks)) {
+      suppressMessages({
+        layout <- ggplot_build(plt)$layout
+      })
+      shock_rects <- self$get_theta_shock_rects_df(self$theta_shocks) %>%
+        mutate(value=0, chain_step_id=0, effect_name=NULL, effect=NULL)
+      y_maxs <- unlist(lapply(layout$panel_params, function(x) rep(  max(x$y.range),  nrow(shock_rects)) ))
+      plt <- plt + 
+        geom_rect(data=shock_rects, aes(xmin=start, xmax=end, ymin=-Inf, ymax=Inf), fill='darkorange', color='orange',linetype=2,  alpha=.05) + 
+        geom_text(data = shock_rects, aes(x = (start + end) / 2, y = y_maxs, label = label),
+                  vjust = 1, size = 3) #fontface = "bold"
+    }
+    
+    if (return_plot)
+      return(plt)
+    
+  }, 
   
   
   ##
@@ -4628,6 +5414,19 @@ SaomNkRSienaBiEnv <- R6Class(
         theme_bw() +
         ggtitle('Component Degrees: K_B2, K_C')
     })
+    
+    if (!is.null(self$theta_shocks)) {
+      suppressMessages({
+        layout <- ggplot_build(plt)$layout
+      })
+      shock_rects <- self$get_theta_shock_rects_df(self$theta_shocks) %>%
+        mutate(value=0, chain_step_id=0, effect_name=NULL, effect=NULL)
+      y_maxs <- unlist(lapply(layout$panel_params, function(x) rep(  max(x$y.range),  nrow(shock_rects)) ))
+      plt <- plt + 
+        geom_rect(data=shock_rects, aes(xmin=start, xmax=end, ymin=-Inf, ymax=Inf), fill='darkorange', color='orange',linetype=2,  alpha=.05) + 
+        geom_text(data = shock_rects, aes(x = (start + end) / 2, y = y_maxs, label = label),
+                  vjust = 1, size = 3) #fontface = "bold"
+    }
     
     if (return_plot)
       return(plt)
@@ -4663,14 +5462,36 @@ SaomNkRSienaBiEnv <- R6Class(
         theme_bw() + 
         ggtitle('Actor Degrees: K_A, K_B1')
     })
+    
+    if (!is.null(self$theta_shocks)) {
+      suppressMessages({
+        layout <- ggplot_build(plt)$layout
+      })
+      shock_rects <- self$get_theta_shock_rects_df(self$theta_shocks) %>%
+        mutate(value=0, chain_step_id=0, effect_name=NULL, effect=NULL)
+      y_maxs <- unlist(lapply(layout$panel_params, function(x) rep(  max(x$y.range),  nrow(shock_rects)) ))
+      plt <- plt + 
+        geom_rect(data=shock_rects, aes(xmin=start, xmax=end, ymin=-Inf, ymax=Inf), fill='darkorange', color='orange',linetype=2,  alpha=.05) + 
+        geom_text(data = shock_rects, aes(x = (start + end) / 2, y = y_maxs, label = label),
+                  vjust = 1, size = 3) #fontface = "bold"
+    }
 
-    
-    
     if (return_plot)
       return(plt)
   }, 
   
   
+  ##
+  # actor_ids=c()
+  # thin_factor=1 
+  # thin_wave_factor=1
+  # smooth_method='loess'  ##"lm", "glm", "gam", "loess","auto"
+  # show_utility_points=T
+  # scale_utility=TRUE
+  # return_plot=TRUE
+  # plot_file=NA 
+  # plot_dir=NA
+  # loess_span=0.5
   ##
   plot_actor_utility_strategy_summary = function(actor_ids=c(), 
                                                  thin_factor=1, 
@@ -4702,12 +5523,12 @@ SaomNkRSienaBiEnv <- R6Class(
       structure_model$dv_bipartite$interactions
     )
     #
-    neffs <- length(efflist)
-    ### empty matrix to hold actor network statistics
-    effnames <- sapply(efflist, function(x) x$effect, simplify = T)
-    effparams <- sapply(efflist, function(x) x$parameter, simplify = T)
-    
-    names(effparams) <- effnames
+    # neffs <- length(efflist)
+    # ### empty matrix to hold actor network statistics
+    # effnames <- sapply(efflist, function(x) x$effect, simplify = T)
+    # effparams <- sapply(efflist, function(x) x$parameter, simplify = T)
+    # 
+    # names(effparams) <- effnames
     
     
     dv_bipartite <- self$config_structure_model$dv_bipartite
@@ -4717,67 +5538,35 @@ SaomNkRSienaBiEnv <- R6Class(
     COMPONENTS <- sienaNodeSet(self$N, nodeSetName="COMPONENTS")
     # strat_mat_varCovar <- varCovar(strat_eff$x, nodeSet = 'ACTORS')
     if (! 'coCovars' %in% names(dv_bipartite) ) {
-      rsiena_data <- sienaDataCreate(list(self$bipartite_rsienaDV), nodeSets = list(ACTORS, COMPONENTS))
-      return(rsiena_data)
+      # rsiena_data <- sienaDataCreate(list(self$bipartite_rsienaDV), nodeSets = list(ACTORS, COMPONENTS))
+      # return(rsiena_data)
+      stop('dv_bipartite has no coCovars. Check structure_model.')
     }
     
     
-    structeffs <- sapply(dv_bipartite$effects, function(x)x$parameter)
-    names(structeffs) <- sapply(dv_bipartite$effects, function(x)x$effect)
-    
-    coCovars     <- sapply(dv_bipartite$coCovars, function(x)x$effect)
-    varCovars     <- sapply(dv_bipartite$varCovars, function(x)x$effect)
-    coDyadCovars  <- sapply(dv_bipartite$coDyadCovars, function(x)x$effect)
-    varDyadCovars <- sapply(dv_bipartite$varDyadCovars, function(x)x$effect)
-    interactions <- sapply(dv_bipartite$interactions, function(x)x$effect)
-    
-    coCovars_param     <- sapply(dv_bipartite$coCovars, function(x)x$parameter)
-    varCovars_param     <- sapply(dv_bipartite$varCovars, function(x)x$parameter)
-    coDyadCovars_param  <- sapply(dv_bipartite$coDyadCovars, function(x)x$parameter)
-    varDyadCovars_param <- sapply(dv_bipartite$varDyadCovars, function(x)x$parameter)
-    interactions_param <- sapply(dv_bipartite$interactions, function(x)x$parameter)
-    
-    covs <- unlist(c(coCovars_param, varCovars_param, coDyadCovars_param,  varDyadCovars_param, interactions_param))
-    names(covs) <- unlist(c(coCovars, varCovars, coDyadCovars, varDyadCovars, interactions))
-    
-    coCovarTypes     <- sapply(dv_bipartite$coCovars, function(x)x$interaction1)
-    varCovarTypes     <- sapply(dv_bipartite$varCovars, function(x)x$interaction1)
-    coDyadCovarTypes  <- sapply(dv_bipartite$coDyadCovars, function(x)x$interaction1)
-    varDyadCovarTypes <- sapply(dv_bipartite$varDyadCovars, function(x)x$interaction1)
-    # interactionTypes <- sapply(dv_bipartite$interactions, function(x)x$interaction1)
-    
-    vartypes <- unlist(c(coCovarTypes, varCovarTypes, coDyadCovarTypes, varDyadCovarTypes))
-    component_type_ids <-  grep('self\\$component.+var', vartypes)
-    strat_type_ids <-  grep('self\\$strat.+var', vartypes)
-    
-    # interact_types <- sapply(dv_bipartite$interactions, function(x)x$effect)
-    interact_type_ids <- sapply(seq_along(dv_bipartite$interactions), function(i)i)
+    params <- self$get_structure_model_params()
     #
-    nstep <- sum(!self$chain_stats$stability)
-    
+    structeffs <- params$structeffs
+    covs <- params$covs
+    component_type_ids <- params$component_type_ids
+    strat_type_ids <- params$strat_type_ids
+    interact_type_ids <- params$interact_type_ids
     #
-    sim_title_str <- sprintf(
-      'Environment: Actors (M) = %s, Components (N) = %s, Init.P. = %.2f\nStructure:  %s\nComponent Payoff: %s\nActor Strategy:  %s\nInteractions:  %s', 
-      self$M, self$N, self$BI_PROB,
-      paste( paste(paste(names(structeffs), structeffs, sep='= '), sep=''), collapse = ';  '),
-      paste( paste(paste(names(covs)[component_type_ids], covs[component_type_ids], sep='= '), sep=''), collapse = ';  '),
-      paste( paste(paste(names(covs)[strat_type_ids], covs[strat_type_ids], sep='= '), sep='' ), collapse = ';  '),
-      paste( paste(paste(interactions, interactions_param, sep='= '), sep='' ), collapse = ';  ')
-    )
-    # #
-    # compoeffs   <- coveffs[ componentDV_ids ]
-    # compoparams <- covparams[ componentDV_ids ]
-    # compofixs   <- covfixs[ componentDV_ids ]
-    # #
-    # strateffs   <- coveffs[ stratDV_ids ]
-    # stratparams <- covparams[ stratDV_ids ]
-    # stratfixs   <- covfixs[ stratDV_ids ]
+    inputeffs <- c(structeffs, covs)
+    #
+    modeleffs <- self$rsiena_effects$parm[self$rsiena_effects$include]
+    names(modeleffs) <-  self$rsiena_effects$shortName[self$rsiena_effects$include]
+    #
+    sim_title_str <- self$get_structure_model_param_str(params)
+    #
     efflvls <- c('utility', 
                  names(structeffs),
                  names(covs)[component_type_ids],
                  names(covs)[strat_type_ids], 
-                 interactions
+                 names(covs)[interact_type_ids]
     )
+    #
+    nstep <- sum(!self$chain_stats$stability)
     ##----------------------------------
     
     ## Compare 2 actors utilty
@@ -4821,6 +5610,20 @@ SaomNkRSienaBiEnv <- R6Class(
     plt <- plt + geom_smooth(aes(x=chain_step_id, y=utility_mean), method = smooth_method, span=loess_span, 
                              data=dat %>% group_by(chain_step_id)%>%dplyr::summarize(utility_mean=mean(utility)),
                              color='black', linetype=1, alpha=.1) 
+    
+    if (!is.null(self$theta_shocks)) {
+      suppressMessages({
+        layout <- ggplot_build(plt)$layout
+      })
+      shock_rects <- self$get_theta_shock_rects_df(self$theta_shocks) %>%
+        mutate(utility=0, chain_step_id=0, effect_name=NULL, effect=NULL)
+      y_maxs <- unlist(lapply(layout$panel_params, function(x) rep(  max(x$y.range),  nrow(shock_rects)) ))
+      plt <- plt + 
+        geom_rect(data=shock_rects, aes(xmin=start, xmax=end, ymin=-Inf, ymax=Inf), fill='darkorange', color='orange',linetype=2,  alpha=.05) + 
+        geom_text(data = shock_rects, aes(x = (start + end) / 2, y = y_maxs, label = label),
+                  vjust = 0, size = 3) #fontface = "bold"
+    }
+      
     #
     plt <- plt + theme_bw() + 
       ylim(util_lim) + 
@@ -4843,16 +5646,10 @@ SaomNkRSienaBiEnv <- R6Class(
       return(rsiena_data)
     }
     
-    # plt <- plt + ggtitle(sprintf('Environment: Actors (M) = %s, Components (N) = %s, Init.Prob. = %.2f\nActor Strategy:  %s\nComponent Payoff:  %s\nStructure:  %s', 
-    #                              self$M, self$N, self$BI_PROB,
-    #                              paste( paste(paste(strateffs[stratDV_ids], stratparams[stratDV_ids], sep='= '), stratfixs[stratDV_ids], sep='' ), collapse = ';  '),
-    #                              paste( paste(paste(strateffs[componentDV_ids], stratparams[componentDV_ids], sep='= '), stratfixs[componentDV_ids], sep=''), collapse = ';  '),
-    #                              paste( paste(paste(structeffs, structparams, sep='= '), structfixs, sep=''), collapse = ';  ')
-    # ))
     plt <- plt + ggtitle(sim_title_str)
     plt <- plt +  guides(color = guide_legend(nrow = 1))
     
-    #### Density
+    #### Density -------------------------------------------------------
     stratmeans <- dat %>% group_by(strategy) %>% 
       dplyr::summarize(n=n(), mean=mean(utility, na.rm=T), sd=sd(utility, na.rm=T))
     ## Actor density fact plots comparing H1 to H2 utility distribution

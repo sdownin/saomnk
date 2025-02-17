@@ -62,7 +62,10 @@ SaomNkRSienaBiEnv_base <- R6Class(
     bipartite_rsienaDV = NULL,
     social_rsienaDV = NULL,
     search_rsienaDV = NULL,
-    ##----- COVARIATES -----------------
+    #
+    theta_shocks = NULL,
+    theta_matrix = NULL,
+    ##----- DyadVARIATES -----------------
     strat_1_coCovar = NULL,        ## constant strategy covariate  (M-vector)
     strat_2_coCovar = NULL,
     strat_3_coCovar = NULL,
@@ -319,7 +322,7 @@ SaomNkRSienaBiEnv_base <- R6Class(
     
     
     ##-----/helper-------------------------
-    
+ 
  
     
     
@@ -346,8 +349,16 @@ SaomNkRSienaBiEnv_base <- R6Class(
       #   return(NULL)
       # }
       ##---------- 1 Efect --------------------------
-      
-      if (eff$effect == 'density') 
+      if (eff$effect == 'Rate') 
+      {
+        self$rsiena_effects <- includeEffects(self$rsiena_effects,  Rate, ## get network statistic function from effect name (character)
+                                              name = eff$dv_name,  # interaction1 = eff$interaction1,
+                                              fix = eff$fix, 
+                                              type='rate')
+        self$rsiena_effects <- setEffect(self$rsiena_effects,  Rate, 
+                                         name = eff$dv_name, parameter = eff$parameter,  fix = eff$fix, type='rate')
+      }
+      else if (eff$effect == 'density') 
       {
         self$rsiena_effects <- includeEffects(self$rsiena_effects,  density, ## get network statistic function from effect name (character)
                                              name = eff$dv_name,  # interaction1 = eff$interaction1,
@@ -532,6 +543,108 @@ SaomNkRSienaBiEnv_base <- R6Class(
     
     
     
+    # ##**altX**
+    # component_cov <- self$rsiena_data$cCovars[[ interact$interaction1 ]]
+    # if (attr(component_cov, 'centered')) {
+    #   ## return to uncentered original data
+    #   component_cov <-  component_cov + attr(component_cov, 'mean')
+    # }
+    
+    # ##**X**
+    # dyad_cov <- self$rsiena_data$dycCovars[[ interact$interaction1 ]]
+    # if (attr(component_cov, 'centered')) {
+    #   ## return to uncentered original data
+    #   dyad_cov <-  dyad_cov + attr(dyad_cov, 'mean')
+    # }
+    # ##**XWX**
+    # component_dyad_cov <- self$rsiena_data$dycCovars[[ interact$interaction2 ]]
+    # if ( all(diag(component_dyad_cov)==0)  &  all(c(component_dyad_cov) %in% c(0,1)) ) {
+    #   diag(component_dyad_cov) <- 1
+    # }
+    # ##
+    # inter_mat <- outer(component_cov, component_cov, "*") * component_dyad_cov
+    #
+    
+    include_rsiena_effect_from_eff_list_nonself = function(rsiena_effects, eff, unfix_all=TRUE) {
+      
+      if (grepl('rate',eff$effect, ignore.case = T)) {
+        cat(sprintf('**NOTE** skipping rate effect `%s`',eff$effect))
+        return(rsiena_effects)
+      }
+      #
+      dv_name <- gsub('self\\$','',eff$dv_name, ignore.case = T)
+      #
+      if (is.null(eff$interaction1)) {
+        rsiena_effects <- includeEffects(rsiena_effects,  eff$effect, 
+                                         name = dv_name,  # interaction1 = eff$interaction1,
+                                         fix = ifelse(unfix_all, FALSE, eff$fix), 
+                                         character = TRUE)
+        rsiena_effects <- setEffect(rsiena_effects,  eff$effect,
+                                    name = dv_name, 
+                                    parameter = eff$parameter,  
+                                    fix = ifelse(unfix_all, FALSE, eff$fix), 
+                                    character = TRUE)
+      } else {
+        interact1 <- gsub('self\\$','',eff$interaction1, ignore.case = T)
+        rsiena_effects <- includeEffects(rsiena_effects,  eff$effect, 
+                                         name = dv_name,  # interaction1 = eff$interaction1,
+                                         fix = ifelse(unfix_all, FALSE, eff$fix), 
+                                         interaction1 = interact1,
+                                         character = TRUE)
+        rsiena_effects <- setEffect(rsiena_effects,  eff$effect,
+                                    name = dv_name, 
+                                    parameter = eff$parameter,  
+                                    fix = ifelse(unfix_all, FALSE, eff$fix),
+                                    interaction1 = interact1,
+                                    character = TRUE)
+      }
+
+      return(rsiena_effects)
+    },
+    
+    
+    
+    
+    include_rsiena_interaction_from_eff_list_nonself = function(rsiena_effects, interact, unfix_all=TRUE) {
+      #
+      if ( ! 'manual_interaction' %in% names(rsiena_effects) ) {
+        rsiena_effects$manual_interaction <- NA
+      }
+      #
+      dv_name <- gsub('self\\$','',interact$dv_name, ignore.case = T)
+      #
+      if (is.null(interact$interaction1)) {
+        rsiena_effects <- includeInteraction(rsiena_effects, interact$effects[1], interact$effects[2],  ## get network statistic function from effect name (character)
+                                           name = dv_name, # interaction1 = eff$interaction1,
+                                           include=TRUE,
+                                           initialValue = interact$parameter,
+                                           fix = ifelse(unfix_all, FALSE, interact$fix),
+                                           character = TRUE)
+      } else {
+        interact1 <- c(
+          gsub('self\\$','',eff$interaction1, ignore.case = T),
+          gsub('self\\$','',eff$interaction2, ignore.case = T)
+        )
+        rsiena_effects <- includeInteraction(rsiena_effects, interact$effects[1], interact$effects[2],  ## get network statistic function from effect name (character)
+                                             name = dv_name, # interaction1 = eff$interaction1,
+                                             include=TRUE,
+                                             initialValue = interact$parameter,
+                                             fix = ifelse(unfix_all, FALSE, interact$fix),
+                                             interaction1 = interact1, ##**interaction**
+                                             character = TRUE)
+      }
+
+      ## This workaround adjusts parameter of interaction without name
+      ##**TODO: Check for RSiena official implementation**
+      ## NEED TO SET INTERACTNG VARIABLE NAMES HERE FOR USE IN LATER COMPUTATIONS (theta_matrix)
+      rsiena_effects[rsiena_effects$include,][sum(rsiena_effects$include),'manual_interaction'] <- interact$effect
+      ##
+      return(rsiena_effects)
+    },
+    
+    
+    
+    
     include_rsiena_interaction_from_eff_list = function(interact) {
       #
       if ( ! 'manual_interaction' %in% names(self$rsiena_effects) ) {
@@ -539,36 +652,34 @@ SaomNkRSienaBiEnv_base <- R6Class(
       }
       #
       if(all(c('totInDist2','X') %in% interact$effects))  {
-        # ##**altX**
-        # component_cov <- self$rsiena_data$cCovars[[ interact$interaction1 ]]
-        # if (attr(component_cov, 'centered')) {
-        #   ## return to uncentered original data
-        #   component_cov <-  component_cov + attr(component_cov, 'mean')
-        # }
-        
-        # ##**X**
-        # dyad_cov <- self$rsiena_data$dycCovars[[ interact$interaction1 ]]
-        # if (attr(component_cov, 'centered')) {
-        #   ## return to uncentered original data
-        #   dyad_cov <-  dyad_cov + attr(dyad_cov, 'mean')
-        # }
-        # ##**XWX**
-        # component_dyad_cov <- self$rsiena_data$dycCovars[[ interact$interaction2 ]]
-        # if ( all(diag(component_dyad_cov)==0)  &  all(c(component_dyad_cov) %in% c(0,1)) ) {
-        #   diag(component_dyad_cov) <- 1
-        # }
-        # ##
-        # inter_mat <- outer(component_cov, component_cov, "*") * component_dyad_cov
-        #
         #
         self$rsiena_effects <- includeInteraction(self$rsiena_effects, totInDist2, X,  ## get network statistic function from effect name (character)
                                                   name = interact$dv_name, # interaction1 = eff$interaction1,
                                                   # parameter = interact$parameter,
+                                                  include=TRUE,
+                                                  initialValue = interact$parameter,
                                                   fix = interact$fix,
                                                   interaction1 = c(interact$interaction1, interact$interaction2) )
         ## This workaround adjusts parameter of interaction without name
         ##**TODO: Check for RSiena official implementation**
-        self$rsiena_effects[self$rsiena_effects$include,][sum(self$rsiena_effects$include),'parm'] <- interact$parameter
+        ## NEED TO SET INTERACTNG VARIABLE NAMES HERE FOR USE IN LATER COMPUTATIONS (theta_matrix)
+        self$rsiena_effects[self$rsiena_effects$include,][sum(self$rsiena_effects$include),'manual_interaction'] <- interact$effect
+        # self$rsiena_effects <- setEffect(self$rsiena_effects, unspInt,
+        #                                  name = interact$dv_name,
+        #                                  parameter = interact$parameter,
+        #                                  fix = interact$fix,
+        #                                  interaction1 = c(interact$interaction1, interact$interaction2))  #,
+        
+      } else if(all(c('outAct','inPop') %in% interact$effects))  {
+        
+        self$rsiena_effects <- includeInteraction(self$rsiena_effects, outAct, inPop,  ## get network statistic function from effect name (character)
+                                                  name = interact$dv_name, # interaction1 = eff$interaction1,
+                                                  # parameter = interact$parameter,
+                                                  include=TRUE,
+                                                  initialValue = interact$parameter,
+                                                  fix = interact$fix )
+        ## This workaround adjusts parameter of interaction without name
+        ##**TODO: Check for RSiena official implementation**
         ## NEED TO SET INTERACTNG VARIABLE NAMES HERE FOR USE IN LATER COMPUTATIONS (theta_matrix)
         self$rsiena_effects[self$rsiena_effects$include,][sum(self$rsiena_effects$include),'manual_interaction'] <- interact$effect
         # self$rsiena_effects <- setEffect(self$rsiena_effects, unspInt,
@@ -582,11 +693,12 @@ SaomNkRSienaBiEnv_base <- R6Class(
         self$rsiena_effects <- includeInteraction(self$rsiena_effects, egoX, XWX,  ## get network statistic function from effect name (character)
                                                   name = interact$dv_name, # interaction1 = eff$interaction1,
                                                   # parameter = interact$parameter,
+                                                  include=TRUE,
+                                                  initialValue = interact$parameter,
                                                   fix = interact$fix,
                                                   interaction1 = c(interact$interaction1, interact$interaction2) )
         ## This workaround adjusts parameter of interaction without name
         ##**TODO: Check for RSiena official implementation**
-        self$rsiena_effects[self$rsiena_effects$include,][sum(self$rsiena_effects$include),'parm'] <- interact$parameter
         ## NEED TO SET INTERACTNG VARIABLE NAMES HERE FOR USE IN LATER COMPUTATIONS (theta_matrix)
         self$rsiena_effects[self$rsiena_effects$include,][sum(self$rsiena_effects$include),'manual_interaction'] <- interact$effect
         # self$rsiena_effects <- setEffect(self$rsiena_effects, unspInt,
@@ -600,11 +712,31 @@ SaomNkRSienaBiEnv_base <- R6Class(
         self$rsiena_effects <- includeInteraction(self$rsiena_effects, inPopX, X,  ## get network statistic function from effect name (character)
                                                   name = interact$dv_name, # interaction1 = eff$interaction1,
                                                   # parameter = interact$parameter,
+                                                  include=TRUE,
+                                                  initialValue = interact$parameter,
                                                   fix = interact$fix,
                                                   interaction1 = c(interact$interaction1, interact$interaction2) )
         ## This workaround adjusts parameter of interaction without name
         ##**TODO: Check for RSiena official implementation**
-        self$rsiena_effects[self$rsiena_effects$include,][sum(self$rsiena_effects$include),'parm'] <- interact$parameter
+        ## NEED TO SET INTERACTNG VARIABLE NAMES HERE FOR USE IN LATER COMPUTATIONS (theta_matrix)
+        self$rsiena_effects[self$rsiena_effects$include,][sum(self$rsiena_effects$include),'manual_interaction'] <- interact$effect
+        # self$rsiena_effects <- setEffect(self$rsiena_effects, unspInt,
+        #                                  name = interact$dv_name,
+        #                                  parameter = interact$parameter,
+        #                                  fix = interact$fix,
+        #                                  interaction1 = c(interact$interaction1, interact$interaction2))  #,
+     
+      } else if(all(c('egoX','altX') %in% interact$effects))  {
+        
+        self$rsiena_effects <- includeInteraction(self$rsiena_effects, egoX, altX,  ## get network statistic function from effect name (character)
+                                                  name = interact$dv_name, # interaction1 = eff$interaction1,
+                                                  # parameter = interact$parameter,
+                                                  include=TRUE,
+                                                  initialValue = interact$parameter,
+                                                  fix = interact$fix,
+                                                  interaction1 = c(interact$interaction1, interact$interaction2) )
+        ## This workaround adjusts parameter of interaction without name
+        ##**TODO: Check for RSiena official implementation**
         ## NEED TO SET INTERACTNG VARIABLE NAMES HERE FOR USE IN LATER COMPUTATIONS (theta_matrix)
         self$rsiena_effects[self$rsiena_effects$include,][sum(self$rsiena_effects$include),'manual_interaction'] <- interact$effect
         # self$rsiena_effects <- setEffect(self$rsiena_effects, unspInt,
@@ -613,16 +745,18 @@ SaomNkRSienaBiEnv_base <- R6Class(
         #                                  fix = interact$fix,
         #                                  interaction1 = c(interact$interaction1, interact$interaction2))  #,
         
+           
       } else if(all(c('inPopX','egoX') %in% interact$effects))  {
         
         self$rsiena_effects <- includeInteraction(self$rsiena_effects, inPopX, egoX,  ## get network statistic function from effect name (character)
                                                   name = interact$dv_name, # interaction1 = eff$interaction1,
                                                   # parameter = interact$parameter,
+                                                  include=TRUE,
+                                                  initialValue = interact$parameter,
                                                   fix = interact$fix,
                                                   interaction1 = c(interact$interaction1, interact$interaction2) )
         ## This workaround adjusts parameter of interaction without name
         ##**TODO: Check for RSiena official implementation**
-        self$rsiena_effects[self$rsiena_effects$include,][sum(self$rsiena_effects$include),'parm'] <- interact$parameter
         ## NEED TO SET INTERACTNG VARIABLE NAMES HERE FOR USE IN LATER COMPUTATIONS (theta_matrix)
         self$rsiena_effects[self$rsiena_effects$include,][sum(self$rsiena_effects$include),'manual_interaction'] <- interact$effect
         # self$rsiena_effects <- setEffect(self$rsiena_effects, unspInt,
@@ -636,11 +770,12 @@ SaomNkRSienaBiEnv_base <- R6Class(
         self$rsiena_effects <- includeInteraction(self$rsiena_effects, inPopX, altX,  ## get network statistic function from effect name (character)
                                                   name = interact$dv_name, # interaction1 = eff$interaction1,
                                                   # parameter = interact$parameter,
+                                                  include=TRUE,
+                                                  initialValue = interact$parameter,
                                                   fix = interact$fix,
                                                   interaction1 = c(interact$interaction1, interact$interaction2) )
         ## This workaround adjusts parameter of interaction without name
         ##**TODO: Check for RSiena official implementation**
-        self$rsiena_effects[self$rsiena_effects$include,][sum(self$rsiena_effects$include),'parm'] <- interact$parameter
         ## NEED TO SET INTERACTNG VARIABLE NAMES HERE FOR USE IN LATER COMPUTATIONS (theta_matrix)
         self$rsiena_effects[self$rsiena_effects$include,][sum(self$rsiena_effects$include),'manual_interaction'] <- interact$effect
         # self$rsiena_effects <- setEffect(self$rsiena_effects, unspInt,
@@ -699,28 +834,99 @@ SaomNkRSienaBiEnv_base <- R6Class(
       return(totInDist2_values)
     },
     
+    ##
+    get_rsiena_effects_theta_df = function(no_rates=TRUE) {
+      if (is.null(self$rsiena_effects))
+        stop('self$rsiena_effects is not yet set.')
+      ##
+      theta_df <- as.data.frame( self$rsiena_effects[self$rsiena_effects$include, ] )
+      ## Effect key
+      theta_df$effect_key <- sapply(1:nrow(theta_df), function(i){
+        paste(c(theta_df$name[i], ## DV name
+                theta_df$shortName[i], ## effect name
+                ifelse(theta_df$interaction1[i]!='', theta_df$interaction1[i], NA), ## interactions make unique effect key
+                ifelse(theta_df$interaction2[i]!='', theta_df$interaction2[i], NA)  ## interactions make unique effect key
+                ),collapse = '::')
+      })
+      ### Effect level names for facet plotting (handle multiple of same effect)
+      theta_df$effect_level <- theta_df$shortName
+      dups <- plyr::count(theta_df$shortName) %>% filter(freq > 1)
+      if (nrow(dups)) {
+        for (i_row in 1:nrow(dups)) {
+          rename_ids <- which(theta_df$shortName == dups$x[i_row] )
+          theta_df$effect_level[ rename_ids ] <- paste(dups$x[i_row], 1:dups$freq[i_row], sep='_')
+        }
+      }
+      ##
+      if (no_rates)
+        theta_df <- theta_df %>% filter( ! grepl('rate', theta_df$shortName, ignore.case = T) )
+      #
+      return(theta_df)
+    },
     
+    # get_cov_type_from_structure_model = function(rsiena_effect_item, cov_type, structure_model=NULL) {
+    #   
+    # },
+    
+    get_cov_data = function(rsiena_effect_item, structure_model=NULL) {
+      if (is.null(structure_model)) {
+        struture_model <- self$config_structure_model
+      }
+      dv <- rsiena_effect_item$name
+      #
+      interact1 <- gsub('self\\$', '', rsiena_effect_item$interaction1)
+      interact2 <- gsub('self\\$', '', rsiena_effect_item$interaction2)
+      #
+      if(is.null(self[[interact1]])) 
+        stop(sprintf('Covariate not set for interaction1 = `self$%s`.', interact1))
+      if( interact2 != "" || grepl('[|]', interact2) ) 
+        stop(sprintf('DEBUG handling of 2 interactions: interaction1=`%s` and interaction2=`%s`.', interact1, interact2))
+      #
+      covar <- self[[interact1]]
+      #
+      return( covar )
+      
+    },
+    
+    # type <- switch(type,
+    #                effects = ,
+    #                coCovars = ,
+    #                varCovars = NA
+    #                )
+    
+    # struture_model[[dv]][[]]
+    
+    # for (i in 1:length(structure_model)) {
+    #   if (length(structure_model[[ i ]]$effects)) {
+    #     for (j in 1:length(structrue_model[[ i ]]$effects))}{
+    #       if 
+    #     }
+    #   }
+    # }
     
     ##
     get_struct_mod_stats_mat_from_bi_mat = function(bi_env_mat, type='all') {
+      #
+      theta_df_norates <- self$get_rsiena_effects_theta_df(no_rates=TRUE)
+      theta_df_norates$effect <-  theta_df_norates$shortName
       #
       xActorDegree      <- rowSums(bi_env_mat, na.rm=T)
       xComponentDegree  <- colSums(bi_env_mat, na.rm=T)
       #
       # eff <- m1$rsiena_effects[m1$rsiena_effects$include, ]
-      efflist <- c(
-        self$config_structure_model$dv_bipartite$effects,
-        self$config_structure_model$dv_bipartite$coCovars,
-        self$config_structure_model$dv_bipartite$varCovars,
-        self$config_structure_model$dv_bipartite$coDyadCovars,
-        self$config_structure_model$dv_bipartite$varDyadCovars,
-        self$config_structure_model$dv_bipartite$interactions
-      )
+      # efflist <- c(
+      #   self$config_structure_model$dv_bipartite$effects,
+      #   self$config_structure_model$dv_bipartite$coCovars,
+      #   self$config_structure_model$dv_bipartite$varCovars,
+      #   self$config_structure_model$dv_bipartite$coDyadCovars,
+      #   self$config_structure_model$dv_bipartite$varDyadCovars,
+      #   self$config_structure_model$dv_bipartite$interactions
+      # )
       #
-      neffs <- length(efflist)
+      neffs <- nrow(theta_df_norates)
       ### empty matrix to hold actor network statistics
-      effnames <- sapply(efflist, function(x) x$effect, simplify = T)
-      effparams <- sapply(efflist, function(x) x$parameter, simplify = T)
+      effnames <- theta_df_norates$shortName ## sapply(efflist, function(x) x$effect, simplify = T)
+      effparams <- theta_df_norates$parm ##sapply(efflist, function(x) x$parameter, simplify = T)
       #
       mat <- matrix(rep(0, self$M * neffs ), nrow=self$M, ncol=neffs )
       colnames(mat) <- effnames
@@ -729,7 +935,8 @@ SaomNkRSienaBiEnv_base <- R6Class(
       for (i in 1:neffs)
       {
         # print(i)
-        item <- efflist[[ i ]]
+        item <- theta_df_norates[ i , ]
+        # item <- efflist[[ i ]]
         # print('DEBUG  get_struct_mod_stats_mat_from_bi_mat() ')
         # print(item)
         
@@ -753,7 +960,8 @@ SaomNkRSienaBiEnv_base <- R6Class(
           # }
         } else if (item$effect == 'egoX') {
           
-          covar <- item$x
+          # covar <- item$x
+          covar <- self$get_cov_data(item)
           checkConform <-  all(
             (  ## A or B
               class(covar) %in% c('array','matrix') & nrow(covar)==self$M
@@ -767,7 +975,8 @@ SaomNkRSienaBiEnv_base <- R6Class(
             
         } else if (item$effect == 'altX') {
           
-          covar <- item$x
+          # covar <- item$x
+          covar <- self$get_cov_data(item)
           checkConform <-  all(
             (  ## A or B
               class(covar) %in% c('array','matrix') & nrow(covar)==self$M
@@ -783,14 +992,17 @@ SaomNkRSienaBiEnv_base <- R6Class(
         } else if (item$effect == 'outActX') { ## interaction1 component_coCovar
           
           ## N-vector of component covariate
-          covar <- item$x 
+          # covar <- item$x
+          covar <- self$get_cov_data(item)
           # MxN matrix of row-stacked component covariate (repeated for each actor)
           covarComponentMat <- matrix(rep(covar, self$M), nrow=self$M, ncol=self$N, byrow = TRUE)
           ## M-vector of actor's squared sum of component-covariate-weighted component connections (weighted version of the squared degree)
           mat[ , i] <- xActorDegree * rowSums( covarComponentMat * bi_env_mat, na.rm = T)
         
-        } else if (item$effect == 'inPopX') { ## interaction1 strat_coCovar
-          covar <- item$x ## M-vector of actor strategy covariate
+        } else if (item$effect == 'inPopX') { #M-vector of actor strategy covars
+
+          # covar <- item$x
+          covar <- self$get_cov_data(item)
           ## MxN matrix holding actor strategy covariate as columns stacked for each component
           covarActorMat <- matrix(rep(covar, self$N), nrow=self$M, ncol=self$N,  byrow = FALSE)
           ## N-vector of square roots of component weights (sum of actor covariate for the component's connected actors)
@@ -798,27 +1010,29 @@ SaomNkRSienaBiEnv_base <- R6Class(
           ## M-vector of actor sum of it's connected component weights (which are computed as the sum of the connected actor covariates)
           mat[ , i] <- rowSums( bi_env_mat * component_weights_from_actor_stats, na.rm=T ) ##**vector element-wise multiplication by rows of covar matrix, or elements of covar array
         
-        } else if (item$effect == 'XWX') { ## interaction1 strat_coCovar
+        } else if (item$effect == 'XWX') { ## NxN
           
-          covar <- item$x  ## NxN matrix
+          # covar <- item$x
+          covar <- self$get_cov_data(item)
           ## MxM matrix of inter-actor connections weighted by component covarite matrix
           interactor_cov_w <- bi_env_mat %*% covar %*% t(bi_env_mat)
           ## covert to M-vector of actor attributes
           mat[ , i] <- rowSums( interactor_cov_w, na.rm=T ) ##**TODO: CHECK**
           
-        }  else if (item$effect == 'X') { ## interaction1 strat_coCovar
+        }  else if (item$effect == 'X') { ## MxN
           
-          covar <- item$x  ## NxN matrix
+          # covar <- item$x
+          covar <- self$get_cov_data(item)
           ## MxM matrix of inter-actor connections weighted by component covarite matrix
           interactor_cov_w <- bi_env_mat * (covar - mean(c(covar, na.rm=T)) )
           ## covert to M-vector of actor attributes
           mat[ , i] <- rowSums( interactor_cov_w, na.rm=T ) ##**TODO: CHECK**
           # stop('implement altX|XWX .')
           
-        }   else if (item$effect == 'totInDist2') { ## interaction1 strat_coCovar
+        }   else if (item$effect == 'totInDist2') { 
           
           ## M-vector
-          covar <- item$x  
+          covar <- self$get_cov_data(item)
           # 1xN matrix
           component_sums_w_by_actor_covar <-  covar %*% bi_env_mat 
           #
@@ -829,7 +1043,7 @@ SaomNkRSienaBiEnv_base <- R6Class(
           
         }  else if(grepl('[|]', item$effect))  {
           
-          next ## Skip interactions to add them as interactions of the stat matrix 
+          next ## Skip interactions; in processing chain_stats, add interactions to the stat matrix from the interacting effects
           
         } else {
           

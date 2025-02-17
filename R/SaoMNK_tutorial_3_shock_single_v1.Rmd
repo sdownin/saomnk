@@ -1,0 +1,500 @@
+---
+title: 'SaoMNK Tutorial: Exogenous Shock Comparison'
+author: "S. Downing"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  word_document: default
+---
+
+This project begins from the simple premise that the task of endogenizing the NK search landscape can be done by representing the search environment as a binary bipartite network of `M` actors affiliating with `N` components. This bipartite network can be then be analyzed according to the Stochastic Actor-Oriented Model (SAOM) [(Snijders, 1996)](https://doi.org/10.1080/0022250X.1996.9990178).
+
+Thus, the Stochastic Actor-Oriented MNK model, abbrivated `SaoMNK`, is designed for running strategic search simulation, testing, and experimentation by leveraging the `RSiena` package, an R implementation of\
+Simulation Investigation for Empirical Network Analysis (SIENA).
+
+This tutorial offers a basic introduction to `SaoMNK`.
+
+```{r dependencies, include=FALSE}
+rm(list=ls())
+####
+# ## General settings to hide code
+# knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+
+# rm(list=ls())  ## uncomment to clear environ before run
+########################
+##
+##   SAOM-NK Runscript:
+##
+##   1. Estimation Recovery 
+##
+##
+#######################
+library(plyr)
+library(dplyr)
+library(uuid)
+library(ggpubr)
+library(data.table)
+library(DT)
+library(Matrix)  # For block diagonal matrices
+
+#
+.ts <- gsub('\\.','',as.character(as.numeric(Sys.time())))
+#
+# .uuid <- UUIDgenerate()
+##  DIRECTORY
+# grid.dir <- sprintf('_SAOMNK_sensitivity_start0_rand20__%s', .ts )
+###############  Load R DEPENDENCIES ############################
+## Directories
+dir_ext <- 'D:\\Search_networks'
+dir_r <- 'C:\\Users\\sdr8y\\OneDrive - University of Missouri\\Research\\Search_networks\\SaoMNK\\R'
+###############  Load R6 Class DEPENDENCIES ############################
+## Biparite Environment Search Simulation Class
+SaomNkRSienaBiEnv <- source(file.path(dir_r, 'SAOM_NK_R6_model.R'))$value
+
+
+#
+create_block_diag <- function(N, B) {
+  # Determine the approximate block size
+  block_sizes <- rep(N %/% B, B)  # Equal-sized blocks
+  block_sizes[1:(N %% B)] <- if (N %% B == 0) {
+      block_sizes[1:(N %% B)]   # Adjust for remainder
+    } else {
+      block_sizes[1:(N %% B)] + 1
+    }
+  # Create individual binary blocks
+  blocks <- lapply(block_sizes, function(s) matrix(1, nrow = s, ncol = s))
+  # Combine blocks into a block diagonal matrix
+  block_diag_matrix <- as.matrix(bdiag(blocks))  # Convert sparse to standard matrix
+  # Ensure exact NxN dimensions
+  block_diag_matrix <- block_diag_matrix[1:N, 1:N]  # Trim to N x N
+  # return
+  return(block_diag_matrix)
+}
+# # Example usage:
+# N <- 6  # Number of rows/columns
+# B <- 2  # Number of blocks
+# block_matrix <- create_block_diag(8, 2)
+# # Print the matrix
+# print(block_matrix)
+
+```
+
+
+```{r, warning=FALSE}
+###############  Load R6 Class DEPENDENCIES ############################
+## Biparite Environment Search Simulation Class
+SaomNkRSienaBiEnv <- source(file.path(dir_r, 'SAOM_NK_R6_model.R'))$value
+## default settings: Users do not change; TODO: implment within restricted class attributes
+DV_NAME <- 'self$bipartite_rsienaDV'
+## define simulation iterations based on 
+steps_per_actor <- 30
+```
+
+# 1. Baseline Case: No Shocks
+
+## 1.1 Environment Configuration
+
+```{r}
+#
+environ_params <- list(
+  M = 18,       ## Actors
+  N = 24,       ## Components
+  BI_PROB = 0, ## Environmental Density (DGP hyperparameter)
+  component_matrix_start = 'rand', ##**TODO** Implement: 'rand','modular','semi-modular',...
+  rand_seed = 1234,
+  plot_init = F,
+  name = '_test_tutorial_nb_'
+)
+#
+env1 <- SaomNkRSienaBiEnv$new(environ_params)
+```
+
+
+
+## 2.2  Structure Model
+
+
+### 2.2.1 Component Interaction (Epistasis) Matrix
+
+SAOM Objective Function serves as the stochastic actor's utility function for strategic search.
+
+```{r}
+#
+strategies <- list(
+  egoX   =   c(-1, 0, 1),
+  inPopX =   c( 1, 0, -1)
+)
+
+## 2.b. Component Payoffs vector
+set.seed(12345)
+component_payoffs <-  runif(environ_params$N, min = 0, max = 1)
+## 2. Strategies sets the objective function as a linear combination of network stats across DVs
+#
+actor_strats_list <- lapply(strategies, function(strat) rep(strat,  environ_params$M/length(strat)) )
+
+component_int_mat <- create_block_diag(environ_params$N, 3)
+component_int_mat
+```
+
+```{r}
+# component_int_mat_opp <- 1-component_int_mat
+```
+
+
+## 2.2.2 Structure Model List: RSiena parameters and covariates
+
+```{r}
+
+# dyad_cov_XWX <- ( outer(component_payoffs, component_payoffs, '*') * 
+#     create_block_diag(environ_params$N, round(environ_params$N/3))
+# )
+
+dyad_cov_X <- matrix(runif(n = environ_params$N*environ_params$M, min = -.5, max= 1), nrow=environ_params$M)
+# dyad_cov_X <- matrix(runif(environ_params$N*environ_params$M) - runif(environ_params$N*environ_params$M), 
+#                      nrow=environ_params$M) 
+
+# dyad_cov_XWX_X <- t( dyad_cov_XWX %*% t(dyad_cov_X) )
+
+#
+structure_model <- list(
+  dv_bipartite = list(
+    name = 'self$bipartite_rsienaDV',
+    rates = list(
+      # list(effect='Rate', parameter= .111, dv_name=DV_NAME, fix=FALSE )#, ##interaction1 = NULL
+    ),
+    effects = list( ##**STRUCTURAL EFFECTS -- dyadic/network endogeneity sources**
+      list(effect='density', parameter= -.5, dv_name=DV_NAME, fix=T ), ##interaction1 = NULL
+      list(effect='outAct',  parameter= -.2, dv_name=DV_NAME, fix=T ),
+      list(effect='inPop',   parameter=  .4, dv_name=DV_NAME, fix=T ) #interaction1 = NUL
+    ),
+    ## COVARIATE EFFECTS
+    coCovars = list( 
+      ##** COMPONENTS : MONADIC CONSTANT COVARIATE EFFECTS **##
+      list(effect='altX',   parameter= 0, dv_name=DV_NAME, fix=T,
+           interaction1='self$component_1_coCovar', x = component_payoffs
+      ),
+      # list(effect='outActX',   parameter= 0, dv_name=DV_NAME, fix=T,
+      #      interaction1='self$component_1_coCovar', x = component_payoffs 
+      # ),
+      ##** STRATEGIES : MONADIC CONSTANT COVARIATE EFFECTS **##
+      list(effect='egoX',   parameter= 0,  dv_name=DV_NAME, fix=T,
+           interaction1='self$strat_1_coCovar',   x = actor_strats_list[[1]] 
+      ), #interaction1 = NULL
+      # list(effect='inPopX', parameter= 0,  dv_name=DV_NAME, fix=T,
+      #      interaction1='self$strat_2_coCovar',  x = actor_strats_list[[2]]
+      # ),
+      list(effect='egoX', parameter= 0,  dv_name=DV_NAME, fix=T,
+           interaction1='self$strat_2_coCovar',  x = actor_strats_list[[2]]
+      )
+    ),
+    ##**MONADIC TIME-VARYING COVARIATE EFFECTS -- DYNAMIC STRATEGY PROGRAMS**
+    varCovars = list(),
+    ##**DYADIC CONSTANT COVARIATE EFFECTS -- EXOGENOUS INTERACTION MATRIX**
+    coDyadCovars = list(
+      list(effect='XWX',   parameter= .1, dv_name=DV_NAME, fix=T, nodeSet=c('COMPONENTS','COMPONENTS'),##if M=N, must provide nodeSet
+           interaction1='self$component_1_coDyadCovar',
+           x = component_int_mat ## component-[actor]-component dyads
+      )#,
+      # list(effect='XWX',   parameter= -.02, dv_name=DV_NAME, fix=T, nodeSet=c('COMPONENTS','COMPONENTS'), ##if M=N, must provide nodeSet
+      #      interaction1='self$component_2_coDyadCovar',
+      #      x = (1-component_int_mat) ## deltas = changes of payoff contributions from each actor-component
+      # )
+    ),
+     ##**DYADIC TIME-VARYING COVARIATE EFFECTS -- DYNAMIC INTERACTION MATRIX**
+    varDyadCovars = list(),
+    interactions = list(
+      # list(effect='egoX|XWX',   parameter= 0, dv_name=DV_NAME, fix=T,
+      #      interaction1='self$strat_1_coCovar',
+      #      interaction2='self$component_1_coDyadCovar'
+      # ),
+      # list(effect='inPopX|altX',   parameter= 0, dv_name=DV_NAME, fix=T,
+      #      interaction1='self$strat_2_coCovar',
+      #      interaction2='self$component_1_coCovar'
+      # ),
+      # list(effect='egoX|altX',   parameter= 0, dv_name=DV_NAME, fix=T,
+      #      interaction1='self$strat_2_coCovar',
+      #      interaction2='self$component_1_coCovar'
+      # )
+    )
+  )
+)
+```
+
+
+
+
+
+## 2.2.3 Preview Structure Model Effects
+
+```{r}
+env1$preview_effects(structure_model, filter=FALSE)
+```
+
+```{r}
+# ## Uncomment if HTML output for interactive filterable data table
+# env1$preview_effects(structure_model, filter=TRUE)
+```
+
+
+
+
+
+## 1.3 Run search with exogneous shocks to parameters
+
+```{r}
+theta_shocks <- list(
+  list(effect_level=c('egoX_1','egoX_2'), parameter=c(1, 0),
+       portion = 1, shock_on=1, label='Early Shock 1'
+  ),
+  list(effect_level=c('egoX_1','egoX_2'), parameter=c(0, 1),
+       portion = 1, shock_on=1, label='Early Shock 2'
+  ),
+  list(effect_level=c('egoX_1','egoX_2'), parameter=c(0, 0),
+       portion = 1, shock_on=0
+  )
+)
+# theta_shocks <- list(
+#   list(effect_level=c('altX','egoX_1','egoX_2'), parameter=c(1, 1, 0), 
+#        portion = 1, shock_on=1, label='Early Shock 1'
+#   ),
+#   list(effect_level=c('altX','egoX_1','egoX_2'), parameter=c(0, 0, 1), 
+#        portion = 1, shock_on=1, label='Early Shock 2'
+#   ),
+#   list(effect_level=c('altX','egoX_1','egoX_2'), parameter=c(1, 0, 0), 
+#        portion = 2, shock_on=0
+#   )
+# )
+
+
+## Run Rsiena search using variable parameters in theta_matrix
+env1$search_rsiena(
+  structure_model = structure_model,
+  iterations_per_actor = steps_per_actor, ## alternative to "iterations=500"
+  theta_shocks = theta_shocks,
+  digits = 4,
+  run_seed = 12345
+)
+```
+
+
+
+```{r}
+# shocks <- env1$fit_rsiena_shocks(n_obs=8)
+```
+
+
+```{r, fig.height=6, fig.width=7, fig.dpi=800}
+# screenreg(lapply(shocks, function(x)x$rsiena_model), single.row = T)
+```
+
+
+
+```{r}
+# shocks <- env1$add_gof_to_rsiena_shocks()
+# shocks
+```
+
+
+## 1.4 Print Bipartite Search Network Snapshots
+
+
+```{r}
+print(env1$component_1_coDyadCovar )
+```
+
+Snapshopts of the the biparite network and the social and component epistasis interactions are taken at fixed step intervals to show the evolving multidimensional coupled search environment (actors and components)
+
+```{r, fig.height=5, fig.width=11}
+snapshot_ids <- c(1, ceiling((1:30)*4), dim(env1$bi_env_arr)[3]  )
+env1$plot_snapshots(snapshot_ids)
+```
+
+## 1.5 Plot Degrees 
+
+Time series is simulated decision steps.
+
+```{r, fig.height=10, fig.width=10, fig.dpi=900}
+##
+env1$plot_degree_4panel(loess_span = 0.25)
+```
+
+
+## 1.8 Plot Utility by Actor over Time (Simulated Decision Steps)
+
+```{r, warning=FALSE, echo=FALSE}
+
+# env1$plot_actor_utility() + 
+#   ggtitle('Utility by Actor\nLoess Curves vs. Periodwise Avg. in Black')
+
+```
+
+## 1.9 Plot Contributions to Actor Utility colored by Strategy
+
+Time series is simulated decision steps.
+
+```{r,  fig.height=13, fig.width=9, fig.dpi=900}
+##
+env1$plot_utility_contributions(loess_span=0.25)
+```
+
+## 1.10 Plot Actor Utility Timeseries and Distribution by Strategy
+
+```{r, fig.height=6, fig.width=8, fig.dpi=800}
+env1$plot_actor_utility_strategy_summary(loess_span=0.5)
+```
+
+## 1.11 Fitness Landscape Peaks Distributions
+
+Number of changes to component ties as distance from counterfactual affiliation configurations
+
+```{r}
+## Use random uniform values for all combinations like traditional NK model
+# env1$compute_fitness_landscape(component_coCovar=NA)
+```
+
+
+
+
+
+# 2. Switch Order of Exogenous Shock
+
+
+```{r}
+env2 <- SaomNkRSienaBiEnv$new(environ_params)
+```
+
+
+
+
+## 2.3 Run RSiena Search Process
+
+```{r}
+theta_shocks_2 <- list(
+  list(effect_level=c('egoX_1','egoX_2'), parameter=c(0, 0),
+       portion = 1, shock_on=0
+  ),
+  list(effect_level=c('egoX_1','egoX_2'), parameter=c(1, 0),
+       portion = 1, shock_on=1, label='Late Shock 1'
+  ),
+  list(effect_level=c('egoX_1','egoX_2'), parameter=c(0, 1),
+       portion = 1, shock_on=1, label='Late Shock 2'
+  )
+)
+# theta_shocks_2 <- list(
+#   list(effect_level=c('altX','egoX_1','egoX_2'), parameter=c(1, 0, 0), 
+#        portion = 2, shock_on=0
+#   ),
+#   list(effect_level=c('altX','egoX_1','egoX_2'), parameter=c(0, 1, 0), 
+#        portion = 1, shock_on=1, label='Late Shock 1'
+#   ),
+#   list(effect_level=c('altX','egoX_1','egoX_2'), parameter=c(1, 0, 1), 
+#        portion = 1, shock_on=1, label='Late Shock 2'
+#   )
+# )
+
+## Run Rsiena search using variable parameters in theta_matrix
+env2$search_rsiena(
+  structure_model = structure_model,
+  theta_shocks = theta_shocks_2,
+  iterations_per_actor = steps_per_actor,
+  digits = 4,
+  run_seed = 12345
+)
+```
+
+
+```{r}
+# shocks2 <- env2$fit_rsiena_shocks(n_obs=10)
+
+```
+
+
+```{r, fig.height=6, fig.width=7, fig.dpi=800}
+# screenreg(lapply(shocks2, function(x)x$rsiena_model), single.row = T)
+  
+```
+
+```{r}
+## 1st and last state of the bipartite matrix system
+print(env2$bipartite_matrix_init )
+print(env2$bi_env_arr[,, dim(env2$bi_env_arr)[3] ] )
+```
+
+```{r}
+print(env2$component_1_coDyadCovar )
+```
+
+## 2.4 Print Bipartite Search Network Snapshots
+
+Snapshopts of the the biparite network and the social and component epistasis interactions are taken at fixed step intervals to show the evolving multidimensional coupled search environment (actors and components)
+
+```{r, fig.height=5, fig.width=11}
+snapshot_ids <- c(1, ceiling((1:30)*4), dim(env1$bi_env_arr)[3]  )
+env2$plot_snapshots(snapshot_ids)
+```
+
+## 2.5 Plot Degrees 
+
+Time series is simulated decision steps.
+
+```{r, fig.height=10, fig.width=10, fig.dpi=900}
+##
+env2$plot_degree_4panel(loess_span = 0.25)
+```
+
+
+## 2.8 Plot Utility by Actor over Time (Simulated Decision Steps)
+
+```{r, warning=FALSE, echo=FALSE}
+
+# env2$plot_actor_utility() + 
+#   ggtitle('Utility by Actor\nLoess Curves vs. Periodwise Avg. in Black')
+
+```
+
+## 2.9 Plot Contributions to Actor Utility colored by Strategy
+
+Time series is simulated decision steps.
+
+```{r,  fig.height=13, fig.width=9, fig.dpi=900}
+##
+env2$plot_utility_contributions(loess_span=0.25)
+```
+
+## 2.10 Plot Actor Utility Timeseries and Distribution by Strategy
+
+```{r, fig.height=6, fig.width=8, fig.dpi=800}
+env2$plot_actor_utility_strategy_summary(loess_span=0.5)
+```
+
+## 2.11 Fitness Landscape Peaks Distributions
+
+Number of changes to component ties as distance from counterfactual affiliation configurations
+
+```{r}
+## Use random uniform values for all combinations like traditional NK model
+# env2$compute_fitness_landscape(component_coCovar=NA)
+```
+
+
+# 3 Compare
+
+```{r}
+# modlist <- c(
+#   lapply(env1$theta_shocks,function(x)x$rsiena_model),
+#   lapply(env2$theta_shocks,function(x)x$rsiena_model)
+# )
+# modlist <- list(
+#   env1_h1 = env1$theta_shocks[[1]]$rsiena_model,
+#   env1_h2 = env1$theta_shocks[[2]]$rsiena_model,
+#   env2_h1 = env2$theta_shocks[[1]]$rsiena_model,
+#   env2_h2 = env2$theta_shocks[[2]]$rsiena_model
+# )
+# screenreg(modlist, digits=3, single.row = F)
+```
+
+
+End.

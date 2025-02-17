@@ -1,5 +1,5 @@
 ---
-title: 'SaoMNK Tutorial: Generalizing NK Epistatic Interaction Fitness'
+title: 'SaoMNK Tutorial: Exogenous Shocks'
 author: "S. Downing"
 date: "`r Sys.Date()`"
 output:
@@ -8,18 +8,12 @@ output:
     df_print: paged
 ---
 
-This project begins from the simple premise that the task of endogenizing the 
-NK search landscape can be done by representing the search environment as a binary
-bipartite network of `M` actors affiliating with `N` components. This bipartite 
-network can be then be analyzed according to the Stochastic Actor-Oriented Model (SAOM) 
-[(Snijders, 1996)](https://doi.org/10.1080/0022250X.1996.9990178). 
+This project begins from the simple premise that the task of endogenizing the NK search landscape can be done by representing the search environment as a binary bipartite network of `M` actors affiliating with `N` components. This bipartite network can be then be analyzed according to the Stochastic Actor-Oriented Model (SAOM) [(Snijders, 1996)](https://doi.org/10.1080/0022250X.1996.9990178).
 
-Thus, the Stochastic Actor-Oriented MNK model, abbrivated `SaoMNK`, is designed 
-for running strategic search simulation, testing, and experimentation 
-by leveraging the `RSiena` package, an R implementation of   
+Thus, the Stochastic Actor-Oriented MNK model, abbrivated `SaoMNK`, is designed for running strategic search simulation, testing, and experimentation by leveraging the `RSiena` package, an R implementation of\
 Simulation Investigation for Empirical Network Analysis (SIENA).
 
-This tutorial offers a basic introduction to `SaoMNK`. 
+This tutorial offers a basic introduction to `SaoMNK`.
 
 ```{r dependencies, include=FALSE}
 rm(list=ls())
@@ -78,15 +72,14 @@ create_block_diag <- function(N, B) {
   # return
   return(block_diag_matrix)
 }
-# Example usage:
-N <- 6  # Number of rows/columns
-B <- 2  # Number of blocks
-block_matrix <- create_block_diag(8, 2)
-# Print the matrix
-print(block_matrix)
+# # Example usage:
+# N <- 6  # Number of rows/columns
+# B <- 2  # Number of blocks
+# block_matrix <- create_block_diag(8, 2)
+# # Print the matrix
+# print(block_matrix)
 
 ```
-
 
 ```{r, warning=FALSE}
 ###############  Load R6 Class DEPENDENCIES ############################
@@ -95,12 +88,10 @@ SaomNkRSienaBiEnv <- source(file.path(dir_r, 'SAOM_NK_R6_model.R'))$value
 ## default settings: Users do not change; TODO: implment within restricted class attributes
 DV_NAME <- 'self$bipartite_rsienaDV'
 ## define simulation iterations based on 
-steps_per_actor <- 10
+steps_per_actor <- 12
 ```
 
-
-
-# 1. Set `theta_matrix` for Arbitrary Shocks 
+# 1. Baseline Case: No Shocks
 
 ## 1.1 Environment Configuration
 
@@ -119,9 +110,10 @@ environ_params <- list(
 env1 <- SaomNkRSienaBiEnv$new(environ_params)
 ```
 
-## 1.2 Structrual Model
 
-SAOM Objective Function serves as the stochastic actor's utility function for strategic search. 
+## 2.2 Structrual Model
+
+SAOM Objective Function serves as the stochastic actor's utility function for strategic search.
 
 ```{r}
 #
@@ -137,7 +129,7 @@ component_payoffs <-  runif(environ_params$N, min = 0, max = 1)
 #
 actor_strats_list <- lapply(strategies, function(strat) rep(strat,  environ_params$M/length(strat)) )
 
-component_int_mat <- create_block_diag(environ_params$N, round(environ_params$N/3))
+component_int_mat <- create_block_diag(environ_params$N, round(environ_params$N/4))
 
 # dyad_cov_XWX <- ( outer(component_payoffs, component_payoffs, '*') * 
 #     create_block_diag(environ_params$N, round(environ_params$N/3))
@@ -153,25 +145,28 @@ dyad_cov_X <- matrix(runif(n = environ_params$N*environ_params$M, min = -.5, max
 structure_model <- list(
   dv_bipartite = list(
     name = 'self$bipartite_rsienaDV',
+    rates = list(
+      list(effect='Rate', parameter= .111, dv_name=DV_NAME, fix=FALSE )#, ##interaction1 = NULL
+    ),
     effects = list( ##**STRUCTURAL EFFECTS -- dyadic/network endogeneity sources**
-      list(effect='density', parameter= -.3, dv_name=DV_NAME, fix=T ), ##interaction1 = NULL
-      list(effect='outAct',  parameter= .1, dv_name=DV_NAME, fix=T ),
-      list(effect='inPop',   parameter= .1, dv_name=DV_NAME, fix=T ) #interaction1 = NUL
+      list(effect='density', parameter= 0, dv_name=DV_NAME, fix=T ), ##interaction1 = NULL
+      list(effect='outAct',  parameter= 0, dv_name=DV_NAME, fix=T ),
+      list(effect='inPop',   parameter= 0, dv_name=DV_NAME, fix=T ) #interaction1 = NUL
     ),
     ## COVARIATE EFFECTS
     coCovars = list( 
       ##** COMPONENTS : MONADIC CONSTANT COVARIATE EFFECTS **##
-      list(effect='altX',   parameter= 0, dv_name=DV_NAME, fix=T,
+      list(effect='altX',   parameter= 1, dv_name=DV_NAME, fix=T,
            interaction1='self$component_1_coCovar', x = component_payoffs
       ),
       # list(effect='outActX',   parameter= 0, dv_name=DV_NAME, fix=T,
       #      interaction1='self$component_1_coCovar', x = component_payoffs 
       # ),
       ##** STRATEGIES : MONADIC CONSTANT COVARIATE EFFECTS **##
-      list(effect='egoX',   parameter= .1,  dv_name=DV_NAME, fix=T,
+      list(effect='egoX',   parameter= 1,  dv_name=DV_NAME, fix=T,
            interaction1='self$strat_1_coCovar',   x = actor_strats_list[[1]] 
       ), #interaction1 = NULL
-      list(effect='inPopX', parameter= .2,  dv_name=DV_NAME, fix=T,
+      list(effect='inPopX', parameter= 1,  dv_name=DV_NAME, fix=T,
            interaction1='self$strat_2_coCovar',  x = actor_strats_list[[2]]
       ) 
     ),
@@ -179,7 +174,7 @@ structure_model <- list(
     varCovars = list(),
     ##**DYADIC CONSTANT COVARIATE EFFECTS -- EXOGENOUS INTERACTION MATRIX**
     coDyadCovars = list(
-      list(effect='XWX',   parameter= .01, dv_name=DV_NAME, fix=T, nodeSet=c('COMPONENTS','COMPONENTS'),##if M=N, must provide nodeSet
+      list(effect='XWX',   parameter= .1, dv_name=DV_NAME, fix=T, nodeSet=c('COMPONENTS','COMPONENTS'),##if M=N, must provide nodeSet
            interaction1='self$component_1_coDyadCovar',
            x = component_int_mat ## component-[actor]-component dyads
       ) #,
@@ -191,14 +186,18 @@ structure_model <- list(
      ##**DYADIC TIME-VARYING COVARIATE EFFECTS -- DYNAMIC INTERACTION MATRIX**
     varDyadCovars = list(),
     interactions = list(
-      list(effect='egoX|XWX',   parameter= -.001, dv_name=DV_NAME, fix=T,
-           interaction1='self$strat_1_coCovar',
-           interaction2='self$component_1_coDyadCovar'
-      ),
-      list(effect='inPopX|altX',   parameter= .1, dv_name=DV_NAME, fix=T,
-           interaction1='self$strat_2_coCovar',
-           interaction2='self$component_1_coCovar'
-      )
+      # list(effect='egoX|XWX',   parameter= 0, dv_name=DV_NAME, fix=T,
+      #      interaction1='self$strat_1_coCovar',
+      #      interaction2='self$component_1_coDyadCovar'
+      # ),
+      # list(effect='inPopX|altX',   parameter= 0, dv_name=DV_NAME, fix=T,
+      #      interaction1='self$strat_2_coCovar',
+      #      interaction2='self$component_1_coCovar'
+      # ),
+      # list(effect='egoX|altX',   parameter= 0, dv_name=DV_NAME, fix=T,
+      #      interaction1='self$strat_2_coCovar',
+      #      interaction2='self$component_1_coCovar'
+      # )
     )
   )
 )
@@ -206,11 +205,10 @@ structure_model <- list(
 
 
 
+
 ```{r}
 env1$preview_effects(structure_model, filter=FALSE)
 ```
-
-
 
 ```{r}
 # ## Uncomment for HTML output with filterable data table
@@ -218,50 +216,26 @@ env1$preview_effects(structure_model, filter=FALSE)
 ```
 
 
-## 1.3 Set `theta_list` for Shocks
+
+
+
+## 1.3 Run search with exogneous shocks to parameters
 
 ```{r}
-## periods when the parameters for listed effects are changed
-# shock_periods <- data.frame(
-#   start     = c(       5,        20,         35),  # Start of each shaded region
-#   end       = c(      10,        25,         40),  # End of each shaded region
-#   parameter = c(    .001,     -.002,       .001),
-#   effect    = c("egoX|XWX", "Phase B", "Event C"),  
-#   label     = c() # Labels for shaded periods
-# )
-
 
 theta_shocks <- list(
-  ## SPAN 1
-  base_init = list(
-    effect = c('egoX|XWX'),
-    parameter = c(.001),
-    portion = 1 ## if not specified, defaults to equally divided (1)
-  ),
-  ## SPAN 2
-  shock = list(
-    effect = c('egoX|XWX'),
-    parameter = c(-.003),
-    portion = 1 ## if not specified, defaults to equally divided (1)
-  ),
-  base_revert = list(
-    effect = c('egoX|XWX'),
-    parameter = c(.001),
-    portion = 1 ## if not specified, defaults to equally divided (1)
-  )
+  ## only one period of shock is supported currently
+  s01 = list(effect=c('egoX','inPopX'), parameter=c( 1, 1), portion = 1, shock_on=0),
+  s11 = list(effect=c('egoX','inPopX'), parameter=c(-2,-2), portion = 1, shock_on=1, label='Short Shock'),
+  s02 = list(effect=c('egoX','inPopX'), parameter=c( 1, 1), portion = 1, shock_on=0),
+  s12 = list(effect=c('egoX','inPopX'), parameter=c(-2,-2), portion = 3, shock_on=1, label='Long Shock'),
+  s03 = list(effect=c('egoX','inPopX'), parameter=c( 1, 1), portion = 2, shock_on=0)
 )
-```
-
-## 1.4 Run RSiena Search Process
-
-```{r}
-
-## TODO:  PICK UP WITH coDydCovar Interation Matrix
 
 ## Run Rsiena search using variable parameters in theta_matrix
 env1$search_rsiena(
   structure_model,
-  iterations = env1$M * steps_per_actor,
+  iterations_per_actor = steps_per_actor, ## alternative to "iterations=500"
   theta_shocks = theta_shocks,
   digits = 4,
   run_seed = 12345
@@ -269,54 +243,38 @@ env1$search_rsiena(
 ```
 
 
-
-
+## 1.4 Print Bipartite Search Network Snapshots
 
 
 ```{r}
-## 1st and last state of the bipartite matrix system
-print(env1$bipartite_matrix_init )
-print(env1$bi_env_arr[,, dim(env1$bi_env_arr)[3] ] )
+print(env1$component_1_coDyadCovar )
 ```
 
-## 1.4 Print Bipartite Search Network Snapshots 
-
-Snapshopts of the the biparite network and the social and component epistasis interactions
-are taken at fixed step intervals to show the evolving multidimensional coupled search 
-environment (actors and components) 
-
+Snapshopts of the the biparite network and the social and component epistasis interactions are taken at fixed step intervals to show the evolving multidimensional coupled search environment (actors and components)
 
 ```{r, fig.height=5, fig.width=11}
-snapshot_ids <- c(1, (1:8)*10, dim(env1$bi_env_arr)[3]  )
+snapshot_ids <- c(1, (1:8)*env1$M, dim(env1$bi_env_arr)[3]  )
 env1$plot_snapshots(snapshot_ids)
 ```
 
-
-
 ## 1.5 Plot Actor Degrees (Component Scope and Common Affiliation Social Ties)
-
 
 Time series is simulated decision steps.
 
 ```{r, fig.height=6, fig.width=6.5, fig.dpi=800}
 ##
-env1$plot_actor_degrees(loess_span = 0.35)
+env1$plot_actor_degrees(loess_span = 0.5)
 ```
-
-
 
 ## 1.6 Plot Component Degrees (Membership/Popularity and Common Actor Epistasis Ties)
 
 ```{r, fig.height=6, fig.width=6.5, fig.dpi=800}
 ##
-env1$plot_component_degrees(loess_span = 0.25)
+env1$plot_component_degrees(loess_span = 0.5)
 
 ```
 
-
-
-
-## 1.7 Plot Utility by Strategy over Time (Simulated Decision Steps) 
+## 1.7 Plot Utility by Strategy over Time (Simulated Decision Steps)
 
 ```{r, warning=FALSE, echo=FALSE}
 
@@ -325,9 +283,7 @@ env1$plot_strategy_utility() +
 
 ```
 
-
-
-## 1.8 Plot Utility by Actor over Time (Simulated Decision Steps) 
+## 1.8 Plot Utility by Actor over Time (Simulated Decision Steps)
 
 ```{r, warning=FALSE, echo=FALSE}
 
@@ -336,19 +292,14 @@ env1$plot_strategy_utility() +
 
 ```
 
-
-
 ## 1.9 Plot Contributions to Actor Utility colored by Strategy
 
 Time series is simulated decision steps.
 
 ```{r,  fig.height=13, fig.width=9, fig.dpi=900}
 ##
-env1$plot_utility_components(loess_span=0.25)
+env1$plot_utility_contributions(loess_span=0.25)
 ```
-
-
-
 
 ## 1.10 Plot Actor Utility Timeseries and Distribution by Strategy
 
@@ -356,11 +307,7 @@ env1$plot_utility_components(loess_span=0.25)
 env1$plot_actor_utility_strategy_summary(loess_span=0.5)
 ```
 
-
-
-
-
-## 1.11  Fitness Landscape Peaks Distributions 
+## 1.11 Fitness Landscape Peaks Distributions
 
 Number of changes to component ties as distance from counterfactual affiliation configurations
 
@@ -370,28 +317,412 @@ env1$compute_fitness_landscape(component_coCovar=NA)
 ```
 
 
-```{r}
-## Use the component values as the means of random noise for different payoff combinations 
-# env1$compute_fitness_landscape(component_coCovar=1)
-```
 
 
 
 ```{r}
-## LOWER SD of component values noise for different payoff combinations 
-# env1$compute_fitness_landscape(component_coCovar=1, component_value_sd=0.01)
-```
-
-
-```{r}
-## HIGHER SD of component values noise for different payoff combinations 
-# env1$compute_fitness_landscape(component_coCovar=1, component_value_sd=0.5)
+env2 <- SaomNkRSienaBiEnv$new(environ_params)
 ```
 
 
 
 
+## 2.3 Run RSiena Search Process
 
+```{r}
+
+## TODO:  PICK UP WITH coDydCovar Interation Matrix
+
+## Run Rsiena search using variable parameters in theta_matrix
+env2$search_rsiena(
+  structure_model,
+  iterations_per_actor = steps_per_actor,
+  digits = 4,
+  run_seed = 12345
+)
+```
+
+```{r}
+
+# saomResDf <- function(res, digits=3) 
+# {
+#   df <- data.frame(
+#     DV=res$effects$name,
+#     Effect=res$effects$effectName,
+#     Type=res$effects$type,
+#     Est=c( NA, round(res$theta, digits = digits)),
+#     se=c(NA, round(res$se, digits = digits)),
+#     t=c(NA, round(res$theta/res$se, digits = digits)),
+#     p=c(NA, round(pt(abs(res$theta/res$se), df=Inf, lower.tail = F) * 2, digits = digits)),
+#     stringsAsFactors = F
+#   )
+#   idx.rate <- grep('rate',df$Effect,T,T)
+#   df$t[idx.rate] <- NA
+#   df$p[idx.rate] <- NA
+#   return(df)
+# }
+# 
+# saomResDf(env2$rsiena_model)
+```
+
+```{r}
+
+# ##
+# #  Create SAOM regression comparison Table
+# ##
+# saomTable <- function(resList, file=NA, nameMap=NA, digits=3, print=TRUE,
+#                       se.brackets=c('(',')'),p.brackets=c('[',']'),
+#                       lin.comb.test.eval.endow=c('transitive triads'),
+#                       show.sig.stars=TRUE, drop.p.col=TRUE, drop.dv.col=TRUE)
+# {
+#   if (se.brackets[1]=='(') se.brackets[1] <- '\'('
+#   if ( p.brackets[1]=='(')  p.brackets[1] <- '\'(' 
+#   
+#   if (class(resList) != 'list') {
+#     resList <- list(resList)
+#   }
+#   behNames <- c()
+#   netNames <- c()
+#   for (res in resList) {
+#     behNames <- c(behNames, names(res$f$Data1$Behaviors))
+#     netNames <- c(netNames, names(res$f$Data1$bipartites))
+#     # netNames <- c(netNames, names(res$f$Data1$nets))
+#   }
+#   dvNames <- unique(c(behNames, netNames))
+#   
+#   nameList <- list()
+#   for (dv in dvNames) {
+#     resDvdf <- data.frame()
+#     for (res in resList) {
+#       .effDf <- as.data.frame(res$effects)
+#       # effTypeNames <- .effDf[grep(dv, res$effects$name,T,T), c('effectName','type')]
+#       effTypeNames <- .effDf[which(.effDf$name==dv & .effDf$include==T), c('effectName','type') ]
+#       resDvdf <- unique(rbind(resDvdf, effTypeNames))
+#     }
+#     nameList[[dv]] <- unique(rbind(resDvdf, effTypeNames))
+#   }
+#   
+#   dfl <- list()
+#   for (res in resList) {
+#     for (dv in dvNames) {
+#       if (dv %in% res$effects$name) {
+#         
+#         # ## results dataframe combining both DVs
+#         .df <- saomResDf(res, digits=digits)
+#         
+#         ##** add linear combination test parameter **
+#         effdf <- res$requestedEffects
+#         if( any(str_length(lin.comb.test.eval.endow) > 0) ) {
+#           
+#           id.eval  <- which( effdf$type == 'eval'  & effdf$effectName == lin.comb.test.eval.endow)
+#           id.endow <- which( effdf$type == 'endow' & effdf$effectName == lin.comb.test.eval.endow)
+#           ##** Recovering Maintenance Effect 2-sided p-val **
+#           ##** based on covariance matrix rows for tested parameters **
+#           #
+#           lc.est <- .df$Est[id.eval] + .df$Est[id.endow]
+#           #
+#           lc.se <- c( sqrt(wt.mat %*% res$covtheta %*% t(wt.mat)) )[1]
+#           #
+#           lc.t <- lc.est / lc.se
+#           lc.p <- pnorm(lc.t, lower.tail = T) * 2 ## two sided
+#           #
+#           ##** Wald Test Recovering Maintenance Effect **
+#           # # ## Alternative Chi-sq (df=1) test to produce p-val 
+#           # #    (same as two-sided p-val of norm dist with std.err. above)
+#           # nparams <- nrow( res$requestedEffects )
+#           # wt.mat <- matrix(0, 1, nparams)
+#           # wt.mat[1,id.eval] <- 1
+#           # wt.mat[1,id.endow] <- 1
+#           # wt.out <- Wald.RSiena(wt.mat, res)
+#           # lc.chisq <- wt.out$chisquare
+#           # lc.df <- wt.out$df
+#           # lc.1side.z <- c(wt.out$onesided)[1]
+#           # lc.2side.p <-  c(wt.out$pvalue)
+#         }
+#         ## Append linear combination test to effects dataframe
+#         .tmp <- data.frame(
+#           DV = dv,
+#           Effect = lin.comb.test.eval.endow,
+#           Type = 'linear_combination',
+#           Est = lc.est,
+#           se = lc.se,
+#           t = lc.t,
+#           p = lc.p
+#         )
+#         ## append to top if linear combination is in first DV; else append to bottom
+#         .df <- if (.df$DV[1]==dv){ rbind(.tmp, .df) }else{ rbind(.df, .tmp) }
+#         ## append to output list
+#         dfl[[dv]][[ length(dfl[[dv]]) + 1 ]] <- .df[which(.df$DV==dv),]
+#       }
+#     }
+#   }
+#   
+#   mod.cols <- c('Est','se','p')
+#   
+#   tdf <- data.frame(stringsAsFactors = F)
+#   for (dv in names(nameList)) {
+#     hasRowname <- FALSE
+#     for (rowi in 1:nrow(nameList[[dv]])) { ## effect row
+#       eff <- nameList[[dv]][rowi,]
+#       effRow <- list()
+#       for (modDf in dfl[[dv]] ) { ## model dataframe in DV group
+#         effId <- which(modDf$Effect == eff$effectName & modDf$Type == eff$type)
+#         if (length(effId) > 0) {
+#           effRow[[length(effRow)+1]] <- modDf[effId,mod.cols]
+#         } else {
+#           .nadf <- data.frame()
+#           for (col in mod.cols) .nadf[1,col] <- NA
+#           effRow[[length(effRow)+1]] <- .nadf
+#         }
+#       }
+#       effRowDf <- cbind(data.frame(DV=dv,Effect=eff$effectName, Type=eff$type, stringsAsFactors = F), cbindDfList(effRow))
+#       if (!hasRowname) {
+#         effRowDf <- rbind(effRowDf, effRowDf)
+#         effRowDf[1,]  <- c('', sprintf('Dynamics: %s', dv), rep(NA, ncol(effRowDf)-2))
+#         hasRowname <- TRUE
+#       }
+#       tdf <- rbind(tdf, effRowDf)
+#     }
+#   }
+#   
+#   # move rate rows to end
+#   .tmp.rate.row <- tdf[1,]
+#   .tmp.rate.row$Effect <- 'Rate Parameters'
+#   rate.idx <- which(tdf$Type=='rate')
+#   tdf <- rbind(tdf[-rate.idx,], .tmp.rate.row, tdf[rate.idx, ])
+# 
+#   
+#   ##
+#   obs <- c()
+#   ns <- c()
+#   conv <- c()
+#   convt <- c()
+#   iter <- c()
+#   for (res in resList) {
+#     obs <-c(obs, res$observations)
+#     ns <- c(ns, attributes(res$f$Data1$nets[[1]][[1]][[1]])$nActors)
+#     conv <- c(conv, res$tconv.max)
+#     convt<- c(convt, max(abs(res$tconv)))
+#     iter <- c(iter, res$n)
+#   }  
+#   
+#   # est idx
+#   idx.est <- which(names(tdf)%in% 'Est')
+#   #
+#   tdf[nrow(tdf)+1, ] <- NA
+#   tdf[nrow(tdf), 'Effect'] <- 'Time Periods'
+#   tdf[nrow(tdf), idx.est] <-  obs
+#   #
+#   tdf[nrow(tdf)+1, ] <- NA
+#   tdf[nrow(tdf), 'Effect'] <- 'Num. Firms'
+#   tdf[nrow(tdf), idx.est] <-  ns
+#   #
+#   tdf[nrow(tdf)+1, ] <- NA
+#   tdf[nrow(tdf), 'Effect'] <- 'Largest converg. t ratio'
+#   tdf[nrow(tdf), idx.est] <-  round(convt, digits = digits)
+#   #
+#   tdf[nrow(tdf)+1, ] <- NA
+#   tdf[nrow(tdf), 'Effect'] <- 'Overall max. converg. ratio'
+#   tdf[nrow(tdf), idx.est] <-  round(conv, digits = digits)
+#   #
+#   tdf[nrow(tdf)+1, ] <- NA
+#   tdf[nrow(tdf), 'Effect'] <- 'Iterations'
+#   tdf[nrow(tdf), idx.est] <-  iter
+#   
+#   idx.se  <- grep('^se\\.{0,1}',names(tdf),T,T)
+#   idx.p <- grep('^p\\.{0,}', names(tdf),T,T)
+#   for (i in 1:length(idx.se)) {
+#     sei <- idx.se[i]
+#     pi <- idx.p[i]
+#     ## Format Standard Error Column
+#     tdf[,sei] <- apply(tdf[,c(sei,pi)],1,function(x) {
+#       se <- x[1]
+#       p <- x[2]
+#       spfstr <- if(show.sig.stars) {
+#         sprintf('%s%s%s.%sf%s%s',se.brackets[1],'%',digits+2,digits,se.brackets[2],getPvalStars(p))
+#       } else {
+#         sprintf('%s%s%s.%sf%s',se.brackets[1],'%',digits+2,digits,se.brackets[2])
+#       }
+#       ifelse(is.na(se)|se=='NA',' ',sprintf(spfstr,as.numeric(se)))
+#     })
+#     ## Format p-Value column
+#     tdf[,pi] <- apply(tdf[,c(sei,pi)],1,function(x) {
+#       se <- x[1]
+#       p <- x[2]
+#       pIsNum <-  !is.na(p) & p!='NA'
+#       spfstr <- sprintf('%s%s%s.%sf%s',p.brackets[1],'%',digits+4,digits,p.brackets[2])
+#       # cat(sprintf('\np = %s,  se = %s,  pIsNum = %s, p.spfstr = %s \n',p,se,pIsNum,spfstr))
+#       ifelse(!pIsNum, ' ', 
+#              ifelse(p<0.001,'[<0.001]',sprintf(spfstr, as.numeric(p))))
+#     })
+#   }
+#   
+#   ## add Type to name (not eval or rate)
+#   idx.nonrate <- which(tdf$Type %in% c('endow','creation'))
+#   tdf$Effect[idx.nonrate] <- apply(tdf[idx.nonrate,c('Effect','Type')],1,function(x){
+#     sprintf('%s: %s',x[2],x[1])
+#   })
+#   tdf <- tdf[,which(names(tdf) != 'Type')]
+#   
+#   ## name mapping for effects
+#   if (!any(is.na(nameMap))) 
+#   {
+#     ord <- c()
+#     for (eff in names(nameMap)) {
+#       idx.nm <- which(tdf$Effect == eff)
+#       ord <- c(ord, idx.nm)
+#       if (length(idx.nm) > 0) {
+#         tdf$Effect[idx.nm] <- nameMap[[eff]]
+#       }
+#     }
+#     tdf <- rbind(tdf[ord,], tdf[-ord,])
+#   }
+#   
+#   if (drop.dv.col) {
+#     tdf <- tdf[,-1]
+#   }
+#   if (drop.p.col) {
+#     idx.p.col <- grep('^p[\\.\\d]{0,}',names(tdf),T,T)
+#     tdf <- tdf[, -idx.p.col]
+#   }
+#   
+#   if (print) {
+#     print(tdf)
+#   }
+#   
+#   if (!is.na(file)) {
+#     write.csv(tdf, file = file, na = "", row.names = F)
+#     cat(sprintf('\nFile written to %s\n', file))
+#   }
+#   
+#   return(tdf)
+#   
+# }
+# saomTable(list(env2$rsiena_model))
+```
+
+```{r}
+# model <- env2$rsiena_model
+# # Extract parameter estimates
+# estimates <- model$theta
+# 
+# # Extract standard errors from the covariance matrix
+# std_errors <- sqrt(diag(model$covtheta))
+# 
+# # Get effect names
+# effect_names <- model$effects$effectName
+# 
+# # Compute t-ratios
+# t_ratios <- estimates / std_errors
+# 
+# # Compute p-values (assuming normal distribution)
+# p_values <- 2 * (1 - pnorm(abs(t_ratios)))
+# 
+# # Function to assign significance stars
+# get_significance <- function(p_value) {
+#   if (p_value < 0.001) return("***")
+#   else if (p_value < 0.01) return("**")
+#   else if (p_value < 0.05) return("*")
+#   else return("")
+# }
+# 
+# # Apply significance function
+# significance_stars <- sapply(p_values, get_significance)
+# 
+# # Create a results data frame
+# results_table <- data.frame(
+#   Effect = effect_names,
+#   Estimate = round(estimates, 3),
+#   `Std. Error` = round(std_errors, 3),
+#   `t-Ratio` = round(t_ratios, 3),
+#   Significance = significance_stars
+# )
+# 
+# # Print results nicely
+# print(results_table)
+# 
+# # For better formatting in RMarkdown:
+# library(knitr)
+# kable(results_table, caption = "RSiena Model Results", digits = 3)
+```
+
+```{r}
+## 1st and last state of the bipartite matrix system
+print(env2$bipartite_matrix_init )
+print(env2$bi_env_arr[,, dim(env2$bi_env_arr)[3] ] )
+```
+
+```{r}
+print(env2$component_1_coDyadCovar )
+```
+
+## 2.4 Print Bipartite Search Network Snapshots
+
+Snapshopts of the the biparite network and the social and component epistasis interactions are taken at fixed step intervals to show the evolving multidimensional coupled search environment (actors and components)
+
+```{r, fig.height=5, fig.width=11}
+snapshot_ids <- c(1, (1:8)*env2$M, dim(env2$bi_env_arr)[3]  )
+env2$plot_snapshots(snapshot_ids)
+```
+
+## 2.5 Plot Actor Degrees (Component Scope and Common Affiliation Social Ties)
+
+Time series is simulated decision steps.
+
+```{r, fig.height=6, fig.width=6.5, fig.dpi=800}
+##
+env2$plot_actor_degrees(loess_span = 0.5)
+```
+
+## 2.6 Plot Component Degrees (Membership/Popularity and Common Actor Epistasis Ties)
+
+```{r, fig.height=6, fig.width=6.5, fig.dpi=800}
+##
+env2$plot_component_degrees(loess_span = 0.5)
+
+```
+
+## 2.7 Plot Utility by Strategy over Time (Simulated Decision Steps)
+
+```{r, warning=FALSE, echo=FALSE}
+
+env2$plot_strategy_utility() + 
+  ggtitle('Utility by Strategy\nLoess Curves vs. Periodwise Avg. in Black')
+
+```
+
+## 2.8 Plot Utility by Actor over Time (Simulated Decision Steps)
+
+```{r, warning=FALSE, echo=FALSE}
+
+# env2$plot_actor_utility() + 
+#   ggtitle('Utility by Actor\nLoess Curves vs. Periodwise Avg. in Black')
+
+```
+
+## 2.9 Plot Contributions to Actor Utility colored by Strategy
+
+Time series is simulated decision steps.
+
+```{r,  fig.height=13, fig.width=9, fig.dpi=900}
+##
+env2$plot_utility_contributions(loess_span=0.25)
+```
+
+## 2.10 Plot Actor Utility Timeseries and Distribution by Strategy
+
+```{r, fig.height=6, fig.width=8, fig.dpi=800}
+env2$plot_actor_utility_strategy_summary(loess_span=0.5)
+```
+
+## 2.11 Fitness Landscape Peaks Distributions
+
+Number of changes to component ties as distance from counterfactual affiliation configurations
+
+```{r}
+## Use random uniform values for all combinations like traditional NK model
+env2$compute_fitness_landscape(component_coCovar=NA)
+```
 
 
 
