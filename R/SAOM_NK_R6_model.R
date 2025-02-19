@@ -19,6 +19,9 @@ library(dplyr)
 library(tidyr)
 library(grid)
 library(rvest)
+library(knitr)
+library(broom)
+library(did)
 
 ###############   DEPENDENCIES ###############################
 # SaomNkRSienaBiEnv_base <- source(file.path(dir_proj, 'SAOM_NK_R6_base_model.R'))$value
@@ -1563,6 +1566,998 @@ SaomNkRSienaBiEnv <- R6Class(
       #
       return( theta_shocks )
     },
+    
+    
+    get_K4_df = function() {
+      #
+      Kdf <- self$K_B1_df %>% mutate(effect='K_B1', node_type='Actor', dyad_type='2-mode  (bipartite)')  %>% 
+        bind_rows( self$K_A_df %>% mutate(effect='K_A', node_type='Actor', dyad_type='1-mode  (projected)')  ) %>%
+        bind_rows( self$K_B2_df %>% mutate(effect='K_B2', node_type='Component', dyad_type='2-mode  (bipartite)') ) %>% 
+        bind_rows( self$K_C_df %>% mutate(effect='K_C', node_type='Component', dyad_type='1-mode  (projected)')  ) 
+      #
+      #
+      Kdf$dyad_type <- factor(Kdf$dyad_type, levels=c('2-mode  (bipartite)','1-mode  (projected)'))
+      ## fill in node_id for actor_id or component_id depending upon node type
+      Kdf$node_id <- apply(Kdf[,c('actor_id','component_id')], 1, function(x)na.omit(x)[1])
+      Kdf$node_id <- factor(Kdf$node_id, levels=sort(unique(as.numeric(Kdf$node_id))))
+      #
+      Kdf$component_id <- as.numeric(Kdf$component_id)
+      #
+      ## user actor strategy for color group loess curve
+      actor_strats <- self$get_actor_strategies()
+      avg_mat <- apply(self$bi_env_arr, c(1,2), mean) 
+      component_actor_strats <- actor_strats[ apply(avg_mat, 2, which.max) ]
+      #
+      Kdf$node_group <- NA
+      Kdf$node_group[which(Kdf$node_type=='Component')] <-  sapply( Kdf$component_id[which(Kdf$node_type=='Component')], function(id){
+        component_actor_strats[ id ]
+      })
+      #
+      Kdf$node_group[which(Kdf$node_type=='Actor')] <- as.character(Kdf$strategy[which(Kdf$node_type=='Actor')])
+      #
+      return(Kdf)
+    },
+    
+    
+    
+    ##
+    plot_shocks = function(verbose=FALSE) {
+      if(is.null(self$theta_shocks))
+        stop('self$theta_shocks is missing.')
+      #
+      sim_title_str <- self$get_structure_model_param_str()
+      #
+      theta_shocks <- self$theta_shocks
+      #
+      actor_strats <- as.factor(self$get_actor_strategies())
+      #
+      nsteps <- max(unlist(lapply(theta_shocks, function(x)x$chain_step_ids)))
+      #
+      util <- self$actor_util_df
+      util$shock_id <- NA
+      util$shock_label <- NA
+      util$shock_on <- NA
+      util$treatment_group <- 0
+      #
+      #
+      Kdf <- self$get_K4_df()
+      Kdf$shock_id <- NA
+      Kdf$shock_label <- NA
+      Kdf$shock_on <- NA
+      Kdf$treatment_group <- 0
+      #
+      statdf <- self$actor_stats_df
+      statdf$shock_id <- NA
+      statdf$shock_label <- NA
+      statdf$shock_on <- NA
+      statdf$treatment_group <- 0
+      ##
+      # avg_mat[ avg_mat >=0.5 ] <- 1
+      # avg_mat[ avg_mat < 0.5 ] <- 0
+      #
+      # actor_strats <- self$get_actor_strategies()
+      # avg_mat <- apply(self$bi_env_arr, c(1,2), mean) 
+      # component_actor_strats <- actor_strats[ apply(avg_mat, 2, which.max) ]
+      
+      # LOOP SHOCKS i
+      for (i in 1:length(theta_shocks)) {
+        
+        shock <- theta_shocks[[ i ]]
+        
+        util_idx <- which(util$chain_step_id %in% shock$chain_step_ids)
+        Kdf_idx  <- which(Kdf$chain_step_id %in% shock$chain_step_ids)
+        statdf_idx  <- which(statdf$chain_step_id %in% shock$chain_step_ids)
+        
+        util$shock_id[ util_idx ]      <- i
+        Kdf$shock_id[ Kdf_idx ]        <- i
+        statdf$shock_id[ statdf_idx ]  <- i
+        
+        util$shock_on[ util_idx ]      <- shock$shock_on
+        Kdf$shock_on[ Kdf_idx ]        <- shock$shock_on
+        statdf$shock_on[ statdf_idx ]  <- shock$shock_on
+        
+        util$shock_label[ util_idx ]      <- ifelse(is.null(shock$label), as.character(i), shock$label)
+        Kdf$shock_label[ Kdf_idx ]        <- ifelse(is.null(shock$label), as.character(i), shock$label)
+        statdf$shock_label[ statdf_idx ]  <- ifelse(is.null(shock$label), as.character(i), shock$label)
+        
+        ##
+        strat_effs <- self$get_rsiena_effects_theta_df(no_rates = T) %>% filter(grepl('(self\\$)?strat_\\d{1,2}',effect_key,ignore.case = T))
+        ## LOOP EFFECTS j IN SHOCK i
+        for (j in 1:nrow(strat_effs)) {
+          
+          strat_eff_j <- strat_effs[j,]
+          #
+          strat_eff_shock_eff_id <- which(shock$effect_level == strat_eff_j$effect_level )
+          ##
+          
+          ##
+          is_treated <- FALSE
+          if(length(strat_eff_shock_eff_id)) {
+            is_treated <- (shock$parameter[ strat_eff_shock_eff_id ] != 0 )
+          }
+          if(is_treated){
+            strat_cov_attr <- gsub('self\\$','', strat_eff_j$interaction1)
+            strat_treated_ids <- which( self[[ strat_cov_attr ]] != 0 )
+            #
+            util_treat_idx <- which( util$actor_id %in% strat_treated_ids )
+            Kdf_treat_idx  <- which( Kdf$actor_id %in% strat_treated_ids )
+            statdf_treat_idx  <- which( statdf$actor_id %in% strat_treated_ids )
+            #
+            util$treatment_group[ util_treat_idx ]      <- min(shock$chain_step_ids)
+            Kdf$treatment_group[ Kdf_treat_idx ]        <- min(shock$chain_step_ids)
+            statdf$treatment_group[ statdf_treat_idx ]  <- min(shock$chain_step_ids)
+          }
+          
+        }##/end j effect loop in shock i
+        
+      }##/end i shock loop
+      
+      
+      util <- util %>% mutate(value = utility, utility=NULL) ## Swap in utility for the 'value' to be computed
+      # Kdf <- Kdf %>% mutate(value = utility, utility=NULL) ## Swap in utility for the 'value' to be computed
+      statdf <- statdf %>% mutate(value = value_contributions, value_contributions=NULL) ## USE VALUE CONTRIBUTIONS
+      
+      
+      
+      pu <- util %>% 
+        ggplot(aes(x=shock_id, y=value, color=strategy,fill=strategy)) + 
+        geom_point(position='jitter', alpha=.1) + geom_boxplot(aes(shape=shock_label), alpha=.2) + 
+        ggtitle(sprintf('Utility by Exogenous Shock\n%s', sim_title_str)) +
+        theme_bw()
+      
+      pk <- Kdf %>% filter(effect %in% c('K_B1','K_A')) %>%
+        ggplot(aes(x=shock_id, y=value, color=node_group,fill=node_group)) + 
+        geom_point(position='jitter', alpha=.1) + geom_boxplot(aes(shape=shock_label), alpha=.2) + 
+        facet_grid(effect ~ ., scales='free_y') +
+        ggtitle(sprintf('Actor and Component Degrees by Exogenous Shock\n%s', sim_title_str)) +
+        theme_bw()
+      
+      ps <- statdf %>% 
+        ggplot(aes(x=shock_id, y=value, color=strategy,fill=strategy)) + 
+        geom_point(position='jitter', alpha=.1) + geom_boxplot(aes(shape=shock_label), alpha=.2) + 
+        facet_grid(effect_level ~ ., scales='free_y') +
+        ggtitle(sprintf('Actor Utility Contribution (statistic * theta) by Exogenous Shock\n%s', sim_title_str)) +
+        theme_bw()
+      
+      # print(pu)
+      # print(pk)
+      # print(ps)
+      
+      return(list(pu=pu, pk=pk, ps=ps))
+      
+    },
+    
+    
+    
+    
+    ##
+    compute_K_shocks = function(K_type='K_B1', ## c('K_A', 'K_B1')
+                                verbose=FALSE) {
+      if(is.null(self$theta_shocks))
+        stop('self$theta_shocks is missing.')
+      if ( ! K_type %in% c('K_A','K_B1')) ## 'K_B2','K_C' not yet supported
+        stop('K_type not supported.')
+      #
+      sim_title_str <- self$get_structure_model_param_str()
+      #
+      theta_shocks <- self$theta_shocks
+      #
+      actor_strats <- as.factor(self$get_actor_strategies())
+      #
+      nsteps <- max(unlist(lapply(theta_shocks, function(x)x$chain_step_ids)))
+      
+      ###
+      Kdf <- self$get_K4_df() %>% filter(effect == K_type) %>%
+        mutate(
+        shock_id = NA,
+        shock_label = NA,
+        shock_on = NA,
+        treatment_group = 0
+      )
+      
+      # LOOP SHOCKS i
+      for (i in 1:length(theta_shocks)) {
+        
+        shock <- theta_shocks[[ i ]]
+        
+        Kdf_idx  <- which(Kdf$chain_step_id %in% shock$chain_step_ids)
+        
+        Kdf$shock_id[ Kdf_idx ]    <- i
+        Kdf$shock_on[ Kdf_idx ]    <- shock$shock_on
+        Kdf$shock_label[ Kdf_idx ] <- ifelse(is.null(shock$label), as.character(i), shock$label)
+        
+        
+        ##
+        strat_effs <- self$get_rsiena_effects_theta_df(no_rates = T) %>% 
+          filter(grepl('strat_\\d{1,2}',effect_key,ignore.case = T))
+        ## LOOP EFFECTS j IN SHOCK i
+        for (j in 1:nrow(strat_effs)) {
+          
+          strat_eff_j <- strat_effs[j,]
+          #
+          strat_eff_shock_eff_id <- which(shock$effect_level == strat_eff_j$effect_level )
+          ##
+          
+          ##
+          is_treated <- FALSE
+          if(length(strat_eff_shock_eff_id)) {
+            is_treated <- (shock$parameter[ strat_eff_shock_eff_id ] != 0  &  shock$shock_on==1 )
+          }
+          if(is_treated){
+            strat_cov_attr <- gsub('self\\$','', strat_eff_j$interaction1)
+            strat_treated_ids <- which( self[[ strat_cov_attr ]] != 0 )
+            #
+            Kdf_treat_idx  <- which( Kdf$actor_id %in% strat_treated_ids )
+            #
+            if (all( Kdf$treatment_group[ Kdf_treat_idx ] == 0 )) {
+              Kdf$treatment_group[ Kdf_treat_idx ]  <- min(shock$chain_step_ids)
+            }
+            
+          }
+          
+        }##/end j effect loop in shock i
+        
+      }##/end i shock loop
+      
+      ##------------------------------------------------
+      ## TEST STRATEGIES
+      ##------------------------------------------------
+      actor_strat_lvls <- levels(actor_strats)
+      #
+      trt_lvl_ids <- which(sapply(actor_strat_lvls, function(x) ! strsplit(x, '_')[[1]][1] %in% c('0',0) ))
+      #
+      ctrl_lvl_id <-  which(sapply(actor_strat_lvls, function(x) strsplit(x, '_')[[1]][1] %in% c('0',0) ))
+      ctrl_lvl <- actor_strat_lvls[ ctrl_lvl_id]
+      
+      test_list <- list()
+      for (ii in 1:length(trt_lvl_ids)) {
+        
+        trt_lvl <- actor_strat_lvls[ trt_lvl_ids[ii] ]
+        
+        
+        ##---------- K Degrees --------------------
+        
+        ###
+        did_Kdf_dat <- Kdf %>% 
+          filter(strategy %in% c(trt_lvl, ctrl_lvl) ) %>%
+          group_by( chain_step_id, actor_id) %>% 
+          summarize(value_mean=mean(value), 
+                    strategy = as.factor(first(strategy)), 
+                    treatment_group=paste(unique(treatment_group, collapse='|')) ) %>%
+          mutate(actor_id = as.numeric(as.character(actor_id)))
+        
+        if (any(grepl('[|]',did_Kdf_dat$treatment_group))){
+          stop('treatment_group error: concatenated multiple groups `|` in summarize function call.')
+        }
+        
+        did_Kdf_dat$treatment_group <- as.numeric( did_Kdf_dat$treatment_group )
+        
+        
+        did_Kdf_attgt <- att_gt(
+          yname = 'value_mean',
+          tname = 'chain_step_id',
+          idname = 'actor_id',
+          gname = 'treatment_group',
+          # xformla = ~ strategy , ## default NULL is:  xformla=~1
+          data = did_Kdf_dat,
+          panel = TRUE,
+          allow_unbalanced_panel = TRUE,
+          control_group = 'notyettreated', # c("nevertreated", "notyettreated"),
+          anticipation = 0,
+          weightsname = NULL,
+          alp = 0.05,
+          bstrap = T,
+          cband = T,
+          biters = 2000,
+          clustervars = NULL,
+          est_method = "dr", ## "reg", "dr", "ipw"
+          base_period = 'universal',#"varying",
+          print_details = verbose,
+          pl = T,
+          cores = 4
+        )
+        
+        
+        
+        
+        did_Kdf_group <- aggte( did_Kdf_attgt, type = 'group', cband = F)
+        # did_stat
+        
+        did_Kdf_dyna <- aggte( did_Kdf_attgt, type = 'dynamic')
+        # did_dyna
+        
+
+        first_treated_step <- min(did_Kdf_dat$treatment_group[ ! did_Kdf_dat$treatment_group %in% c(0,'0') ])
+        
+        ##----------output list-------------------
+        
+        test_key <- sprintf('treatment_%s__control_%s',trt_lvl, ctrl_lvl)
+        #
+        test_list[[ test_key ]] <- list(
+          treatment_strategy = trt_lvl,
+          control_strategy = ctrl_lvl,
+          test_key = test_key,
+          first_treated_step = first_treated_step,
+          stat_type = K_type,
+          did =  list(
+            group   = did_Kdf_group,
+            dynamic = did_Kdf_dyna
+          )
+        )
+        
+      }
+      
+      
+      return(test_list)
+      
+    },
+    
+    
+    ##
+    compute_utility_shocks = function(verbose=FALSE) {
+      if(is.null(self$theta_shocks))
+        stop('self$theta_shocks is missing.')
+      #
+      sim_title_str <- self$get_structure_model_param_str()
+      #
+      theta_shocks <- self$theta_shocks
+      #
+      actor_strats <- as.factor(self$get_actor_strategies())
+      #
+      nsteps <- max(unlist(lapply(theta_shocks, function(x)x$chain_step_ids)))
+      #
+      util <- self$actor_util_df %>% mutate(
+        shock_id = NA,
+        shock_label = NA,
+        shock_on = NA,
+        treatment_group = 0
+      )
+      
+      # LOOP SHOCKS i
+      for (i in 1:length(theta_shocks)) {
+        
+        shock <- theta_shocks[[ i ]]
+        
+        util_idx <- which(util$chain_step_id %in% shock$chain_step_ids)
+        
+        util$shock_id[ util_idx ]    <- i
+        util$shock_on[ util_idx ]    <- shock$shock_on
+        util$shock_label[ util_idx ] <- ifelse(is.null(shock$label), as.character(i), shock$label)
+       
+        ##
+        strat_effs <- self$get_rsiena_effects_theta_df(no_rates = T) %>% filter(grepl('(self\\$)?strat_\\d{1,2}',effect_key,ignore.case = T))
+        ## LOOP EFFECTS j IN SHOCK i
+        for (j in 1:nrow(strat_effs)) {
+          
+          strat_eff_j <- strat_effs[j,]
+          #
+          strat_eff_shock_eff_id <- which(shock$effect_level == strat_eff_j$effect_level )
+          ##
+          
+          ##
+          is_treated <- FALSE
+          if(length(strat_eff_shock_eff_id)) {
+            is_treated <- (shock$parameter[ strat_eff_shock_eff_id ] != 0  &  shock$shock_on==1  )
+          }
+          if(is_treated){
+            strat_cov_attr <- gsub('self\\$','', strat_eff_j$interaction1)
+            strat_treated_ids <- which( self[[ strat_cov_attr ]] != 0 )
+            #
+            util_treat_idx <- which( util$actor_id %in% strat_treated_ids )
+            #
+            if (all( util$treatment_group[ util_treat_idx ] == 0 )){
+              util$treatment_group[ util_treat_idx ]      <- min(shock$chain_step_ids)
+            }
+          }
+          
+        }##/end j effect loop in shock i
+        
+      }##/end i shock loop
+      
+      
+      util <- util %>% mutate(value = utility, utility=NULL) ## Swap in utility for the 'value' to be computed
+      
+      #
+      ##------------------------------------------------
+      ## TEST STRATEGIES
+      ##------------------------------------------------
+      actor_strat_lvls <- levels(actor_strats)
+      #
+      trt_lvl_ids <- which(sapply(actor_strat_lvls, function(x) ! strsplit(x, '_')[[1]][1] %in% c('0',0) ))
+      #
+      ctrl_lvl_id <-  which(sapply(actor_strat_lvls, function(x) strsplit(x, '_')[[1]][1] %in% c('0',0) ))
+      ctrl_lvl <- actor_strat_lvls[ ctrl_lvl_id]
+      
+      test_list <- list()
+      for (ii in 1:length(trt_lvl_ids)) {
+        
+        trt_lvl <- actor_strat_lvls[ trt_lvl_ids[ii] ]
+        
+        
+        ##---------- UTILITY --------------------
+        
+        ###
+        did_util_dat <- util %>% filter(strategy %in% c(trt_lvl, ctrl_lvl) ) %>%
+          group_by( chain_step_id, actor_id) %>% 
+          summarize(value_mean=mean(value), 
+                    strategy = as.factor(first(strategy)), 
+                    treatment_group=paste(unique(treatment_group, collapse='|')) ) %>%
+          mutate(actor_id = as.numeric(as.character(actor_id)))
+        
+        if (any(grepl('[|]',did_util_dat$treatment_group))){
+          stop('treatment_group error: concatenated multiple groups `|` in summarize function call.')
+        }
+        
+        did_util_dat$treatment_group <- as.numeric( did_util_dat$treatment_group )
+        
+        
+        did_util_attgt <- att_gt(
+          yname = 'value_mean',
+          tname = 'chain_step_id',
+          idname = 'actor_id',
+          gname = 'treatment_group',
+          # xformla = ~ strategy , ## default NULL is:  xformla=~1
+          data = did_util_dat,
+          panel = TRUE,
+          allow_unbalanced_panel = TRUE,
+          control_group = 'notyettreated', # c("nevertreated", "notyettreated"),
+          anticipation = 0,
+          weightsname = NULL,
+          alp = 0.05,
+          bstrap = T,
+          cband = T,
+          biters = 2000,
+          clustervars = NULL,
+          est_method = "dr", ## "reg", "dr", "ipw"
+          base_period = 'universal',#"varying",
+          print_details = verbose,
+          pl = T,
+          cores = 4
+        )
+        
+        
+        
+        
+        did_util_group <- aggte( did_util_attgt, type = 'group', cband = F)
+        # did_stat
+        
+        did_util_dyna <- aggte( did_util_attgt, type = 'dynamic')
+        # did_dyna
+        
+        # did_util_cal <- aggte( did_util_attgt, type = 'calendar')
+        # did_cal
+        
+        
+        first_treated_step <- min(did_util_dat$treatment_group[ ! did_util_dat$treatment_group %in% c(0,'0') ])
+        
+        
+        
+        ##----------output list-------------------
+        
+        test_key <- sprintf('treatment_%s__control_%s',trt_lvl, ctrl_lvl)
+        #
+        test_list[[ test_key ]] <- list(
+          #
+          treatment_strategy = trt_lvl,
+          control_strategy = ctrl_lvl,
+          test_key = test_key,
+          first_treated_step = first_treated_step,
+          stat_type = 'utility',
+          did =  list(
+            group    = did_util_group,
+            dynamic  = did_util_dyna
+          )
+        )
+        
+      }
+      
+      
+      return(test_list)
+      
+    },
+    
+    
+    # 
+    # ##
+    # compute_performance_shocks = function(K_type='K_B1', ## c('K_A', 'K_B1')
+    #                                       verbose=FALSE) {
+    #   if(is.null(self$theta_shocks))
+    #     stop('self$theta_shocks is missing.')
+    #   #
+    #   sim_title_str <- self$get_structure_model_param_str()
+    #   #
+    #   theta_shocks <- self$theta_shocks
+    #   #
+    #   actor_strats <- as.factor(self$get_actor_strategies())
+    #   #
+    #   nsteps <- max(unlist(lapply(theta_shocks, function(x)x$chain_step_ids)))
+    #   #
+    #   util <- self$actor_util_df %>% mutate(
+    #     shock_id = NA,
+    #     shock_label = NA,
+    #     shock_on = NA,
+    #     treatment_group = 0
+    #   )
+    #   
+    #   ###
+    #   Kdf <- self$get_K4_df() %>% mutate(
+    #     shock_id = NA,
+    #     shock_label = NA,
+    #     shock_on = NA,
+    #     treatment_group = 0
+    #   )
+    #   if (!is.null(K_type))
+    #     Kdf <- Kdf %>% filter(effect == K_type)
+    #   
+    #   ###
+    #   statdf <- self$actor_stats_df %>% mutate(
+    #     shock_id = NA,
+    #     shock_label = NA,
+    #     shock_on = NA,
+    #     treatment_group = 0
+    #   )
+    #   ##
+    #   # avg_mat[ avg_mat >=0.5 ] <- 1
+    #   # avg_mat[ avg_mat < 0.5 ] <- 0
+    #   #
+    #   # actor_strats <- self$get_actor_strategies()
+    #   # avg_mat <- apply(self$bi_env_arr, c(1,2), mean) 
+    #   # component_actor_strats <- actor_strats[ apply(avg_mat, 2, which.max) ]
+    #   
+    #   # LOOP SHOCKS i
+    #   for (i in 1:length(theta_shocks)) {
+    #     
+    #     shock <- theta_shocks[[ i ]]
+    #     
+    #     util_idx <- which(util$chain_step_id %in% shock$chain_step_ids)
+    #     Kdf_idx  <- which(Kdf$chain_step_id %in% shock$chain_step_ids)
+    #     statdf_idx  <- which(statdf$chain_step_id %in% shock$chain_step_ids)
+    #     
+    #     util$shock_id[ util_idx ]      <- i
+    #     Kdf$shock_id[ Kdf_idx ]        <- i
+    #     statdf$shock_id[ statdf_idx ]  <- i
+    #     
+    #     util$shock_on[ util_idx ]      <- shock$shock_on
+    #     Kdf$shock_on[ Kdf_idx ]        <- shock$shock_on
+    #     statdf$shock_on[ statdf_idx ]  <- shock$shock_on
+    #     
+    #     util$shock_label[ util_idx ]      <- ifelse(is.null(shock$label), as.character(i), shock$label)
+    #     Kdf$shock_label[ Kdf_idx ]        <- ifelse(is.null(shock$label), as.character(i), shock$label)
+    #     statdf$shock_label[ statdf_idx ]  <- ifelse(is.null(shock$label), as.character(i), shock$label)
+    #     
+    #     ##
+    #     strat_effs <- self$get_rsiena_effects_theta_df(no_rates = T) %>% filter(grepl('(self\\$)?strat_\\d{1,2}',effect_key,ignore.case = T))
+    #     ## LOOP EFFECTS j IN SHOCK i
+    #     for (j in 1:nrow(strat_effs)) {
+    #       
+    #       strat_eff_j <- strat_effs[j,]
+    #       #
+    #       strat_eff_shock_eff_id <- which(shock$effect_level == strat_eff_j$effect_level )
+    #       ##
+    #       
+    #       ##
+    #       is_treated <- FALSE
+    #       if(length(strat_eff_shock_eff_id)) {
+    #         is_treated <- (shock$parameter[ strat_eff_shock_eff_id ] != 0 )
+    #       }
+    #       if(is_treated){
+    #         strat_cov_attr <- gsub('self\\$','', strat_eff_j$interaction1)
+    #         strat_treated_ids <- which( self[[ strat_cov_attr ]] != 0 )
+    #         #
+    #         util_treat_idx <- which( util$actor_id %in% strat_treated_ids )
+    #         Kdf_treat_idx  <- which( Kdf$actor_id %in% strat_treated_ids )
+    #         statdf_treat_idx  <- which( statdf$actor_id %in% strat_treated_ids )
+    #         #
+    #         util$treatment_group[ util_treat_idx ]      <- min(shock$chain_step_ids)
+    #         Kdf$treatment_group[ Kdf_treat_idx ]        <- min(shock$chain_step_ids)
+    #         statdf$treatment_group[ statdf_treat_idx ]  <- min(shock$chain_step_ids)
+    #       }
+    #       
+    #     }##/end j effect loop in shock i
+    #   
+    #   }##/end i shock loop
+    #   
+    #   
+    #   util <- util %>% mutate(value = utility, utility=NULL) ## Swap in utility for the 'value' to be computed
+    #   # Kdf <- Kdf %>% mutate(value = utility, utility=NULL) ## Swap in utility for the 'value' to be computed
+    #   statdf <- statdf %>% mutate(value = value_contributions, value_contributions=NULL) ## USE VALUE CONTRIBUTIONS
+    #   
+    #   
+    #   #
+    #   ##------------------------------------------------
+    #   ## TEST STRATEGIES
+    #   ##------------------------------------------------
+    #   actor_strat_lvls <- levels(actor_strats)
+    #   #
+    #   trt_lvl_ids <- which(sapply(actor_strat_lvls, function(x) ! strsplit(x, '_')[[1]][1] %in% c('0',0) ))
+    #   #
+    #   ctrl_lvl_id <-  which(sapply(actor_strat_lvls, function(x) strsplit(x, '_')[[1]][1] %in% c('0',0) ))
+    #   ctrl_lvl <- actor_strat_lvls[ ctrl_lvl_id]
+    #   
+    #   test_list <- list()
+    #   for (ii in 1:length(trt_lvl_ids)) {
+    #     
+    #     trt_lvl <- actor_strat_lvls[ trt_lvl_ids[ii] ]
+    #     
+    #     
+    #     ##---------- UTILITY --------------------
+    #     
+    #     ###
+    #     did_util_dat <- util %>% filter(strategy %in% c(trt_lvl, ctrl_lvl) ) %>%
+    #       group_by( chain_step_id, actor_id) %>% 
+    #       summarize(value_mean=mean(value), 
+    #                 strategy = as.factor(first(strategy)), 
+    #                 treatment_group=paste(unique(treatment_group, collapse='|')) ) %>%
+    #       mutate(actor_id = as.numeric(as.character(actor_id)))
+    # 
+    #     if (any(grepl('[|]',did_util_dat$treatment_group))){
+    #       stop('treatment_group error: concatenated multiple groups `|` in summarize function call.')
+    #     }
+    #     
+    #     did_util_dat$treatment_group <- as.numeric( did_util_dat$treatment_group )
+    #     
+    #     
+    #     did_util_attgt <- att_gt(
+    #       yname = 'value_mean',
+    #       tname = 'chain_step_id',
+    #       idname = 'actor_id',
+    #       gname = 'treatment_group',
+    #       # xformla = ~ strategy , ## default NULL is:  xformla=~1
+    #       data = did_util_dat,
+    #       panel = TRUE,
+    #       allow_unbalanced_panel = TRUE,
+    #       control_group = 'notyettreated', # c("nevertreated", "notyettreated"),
+    #       anticipation = 0,
+    #       weightsname = NULL,
+    #       alp = 0.05,
+    #       bstrap = T,
+    #       cband = T,
+    #       biters = 2000,
+    #       clustervars = NULL,
+    #       est_method = "dr", ## "reg", "dr", "ipw"
+    #       base_period = 'universal',#"varying",
+    #       print_details = verbose,
+    #       pl = T,
+    #       cores = 4
+    #     )
+    #     
+    #     
+    #     
+    #     
+    #     did_util_stat <- aggte( did_util_attgt, type = 'group', cband = F)
+    #     # did_stat
+    #     
+    #     did_util_dyna <- aggte( did_util_attgt, type = 'dynamic')
+    #     # did_dyna
+    #     
+    #     # did_util_cal <- aggte( did_util_attgt, type = 'calendar')
+    #     # did_cal
+    #     
+    #     
+    #     
+    #     
+    #     ##---------- K Degrees --------------------
+    #   
+    #     ###
+    #     did_Kdf_dat <- Kdf %>% 
+    #       filter(strategy %in% c(trt_lvl, ctrl_lvl) ) %>%
+    #       group_by( chain_step_id, actor_id) %>% 
+    #       summarize(value_mean=mean(value), 
+    #                 strategy = as.factor(first(strategy)), 
+    #                 treatment_group=paste(unique(treatment_group, collapse='|')) ) %>%
+    #       mutate(actor_id = as.numeric(as.character(actor_id)))
+    #     
+    #     if (any(grepl('[|]',did_Kdf_dat$treatment_group))){
+    #       stop('treatment_group error: concatenated multiple groups `|` in summarize function call.')
+    #     }
+    #     
+    #     did_Kdf_dat$treatment_group <- as.numeric( did_Kdf_dat$treatment_group )
+    #     
+    #     
+    #     did_Kdf_attgt <- att_gt(
+    #       yname = 'value_mean',
+    #       tname = 'chain_step_id',
+    #       idname = 'actor_id',
+    #       gname = 'treatment_group',
+    #       # xformla = ~ strategy , ## default NULL is:  xformla=~1
+    #       data = did_Kdf_dat,
+    #       panel = TRUE,
+    #       allow_unbalanced_panel = TRUE,
+    #       control_group = 'notyettreated', # c("nevertreated", "notyettreated"),
+    #       anticipation = 0,
+    #       weightsname = NULL,
+    #       alp = 0.05,
+    #       bstrap = T,
+    #       cband = T,
+    #       biters = 2000,
+    #       clustervars = NULL,
+    #       est_method = "dr", ## "reg", "dr", "ipw"
+    #       base_period = 'universal',#"varying",
+    #       print_details = verbose,
+    #       pl = T,
+    #       cores = 4
+    #     )
+    #     
+    #     
+    #     
+    #     
+    #     did_Kdf_stat <- aggte( did_Kdf_attgt, type = 'group', cband = F)
+    #     # did_stat
+    #     
+    #     did_Kdf_dyna <- aggte( did_Kdf_attgt, type = 'dynamic')
+    #     # did_dyna
+    #     
+    #     Kdf_did_list <- if() {
+    #       } else if() {
+    #       } else if() {
+    #       } else {
+    #       }
+    #     
+    #     
+    #     list(
+    #       did_stat  = did_Kdf_stat,
+    #       did_dyna  = did_Kdf_dyna,
+    #       K_type = K_type
+    #     )
+    #     
+    #     
+    #     ##----------output list-------------------
+    #     
+    #     test_key <- sprintf('treatment_%s__control_%s',trt_lvl, ctrl_lvl)
+    #     #
+    #     test_list[[ test_key ]] <- list(
+    #       #
+    #       treatment_strategy = trt_lvl,
+    #       control_strategy = ctrl_lvl,
+    #       test_key = test_key,
+    #       first_treated_step = min(did_util_dat$treatment_group[ ! did_util_dat$treatment_group %in% c(0,'0') ]),
+    #       #
+    #       utility = list(
+    #         did_stat = did_util_stat, 
+    #         did_dyna = did_util_dyna 
+    #       ),
+    #       Kdf = Kdf_did_list
+    #     )
+    #     
+    #   }
+    #  
+    #   
+    #   return(test_list)
+    #   
+    #   
+    #   # util_shock_df <- util %>% group_by(strategy, shock_id) %>% 
+    #   #   mutate(value = utility, utility=NULL) %>% ## Swap in utility for the 'value' to be computed
+    #   #   summarize(
+    #   #     cnt = n(),
+    #   #     cnt_shock_steps = length(unique(chain_step_id)),
+    #   #     pct_shock_steps = 100 * length(unique(chain_step_id))/nsteps,
+    #   #     mean = mean(value, na.rm=T), 
+    #   #     sd=sd(value, na.rm=T),
+    #   #     min = min(value, na.rm=T),
+    #   #     max = max(value, na.rm=T),
+    #   #     rng = abs(diff(range(value, na.rm=T))),
+    #   #     ci95l = quantile(value, .025, na.rm = T),
+    #   #     ci95u = quantile(value, .975, na.rm = T),
+    #   #     q1 = quantile(value, .25, na.rm = T),
+    #   #     q2 = median(value, na.rm = T),
+    #   #     q3 = quantile(value, .75, na.rm = T)
+    #   #   ) 
+    #   # 
+    #   # Kdf_shock_df <- Kdf %>% group_by(strategy, shock_id, effect) %>% 
+    #   #   summarize(
+    #   #     cnt = n(),
+    #   #     cnt_shock_steps = length(unique(chain_step_id)),
+    #   #     pct_shock_steps = 100 * length(unique(chain_step_id))/nsteps,
+    #   #     mean = mean(value, na.rm=T), 
+    #   #     sd=sd(value, na.rm=T),
+    #   #     min = min(value, na.rm=T),
+    #   #     max = max(value, na.rm=T),
+    #   #     rng = abs(diff(range(value, na.rm=T))),
+    #   #     ci95l = quantile(value, .025, na.rm = T),
+    #   #     ci95u = quantile(value, .975, na.rm = T),
+    #   #     q1 = quantile(value, .25, na.rm = T),
+    #   #     q2 = median(value, na.rm = T),
+    #   #     q3 = quantile(value, .75, na.rm = T)
+    #   #   ) 
+    #   # 
+    #   # stat_shock_df <- statdf %>% group_by(strategy, shock_id, effect_level) %>% 
+    #   #   mutate(value = value_contributions) %>% ## USE VALUE CONTRIBUTIONS
+    #   #   summarize(
+    #   #     cnt = n(),
+    #   #     cnt_shock_steps = length(unique(chain_step_id)),
+    #   #     pct_shock_steps = 100 * length(unique(chain_step_id))/nsteps,
+    #   #     mean = mean(value, na.rm=T), 
+    #   #     sd=sd(value, na.rm=T),
+    #   #     min = min(value, na.rm=T),
+    #   #     max = max(value, na.rm=T),
+    #   #     rng = abs(diff(range(value, na.rm=T))),
+    #   #     ci95l = quantile(value, .025, na.rm = T),
+    #   #     ci95u = quantile(value, .975, na.rm = T),
+    #   #     q1 = quantile(value, .25, na.rm = T),
+    #   #     q2 = median(value, na.rm = T),
+    #   #     q3 = quantile(value, .75, na.rm = T)
+    #   #   ) 
+    #   
+    #   
+    #   # ggplot(aes(x=shock_id, y=mean)) %>% geom_point
+    #   
+    # },
+    
+    
+    ##
+    test_shocks = function(model_type='did', verbose=FALSE) {
+      
+      theta_shocks <- self$theta_shocks
+      shock_starts <- sapply(theta_shocks,function(x) min(x$chain_step_ids) )
+      shock_ends <- sapply(theta_shocks,function(x) max(x$chain_step_ids) )
+      theta_shock_on_id1 <- min(which( sapply(theta_shocks,function(x)x$shock_on == 1) ))
+      
+      # min(theta_shocks[[2]]$chain_step_ids) ## generalized in case 2+ off periods before shock_on=1
+      first_shock_on_step <- shock_starts[ theta_shock_on_id1 ]
+      
+      first_shock_on <- theta_shocks[[ theta_shock_on_id1 ]]
+      nsteps_first_shock_on <- length(first_shock_on$chain_step_ids)
+      
+      if (model_type == 'did') {
+        
+        ##---------------------
+        # kag  <- data.table::rbindlist( self$test_shocks_did(test_type='group',   stat_type='K_A'), idcol = 'test_id' )
+        # kb1g <- data.table::rbindlist( self$test_shocks_did(test_type='group',   stat_type='K_B1'), idcol = 'test_id' )
+        # ug   <- data.table::rbindlist( self$test_shocks_did(test_type='group',   stat_type='utility'), idcol = 'test_id' )
+        ##
+        # ug   <- ug   %>% mutate(test_type='group', stat_type='utility')
+        # kb1g <- kb1g %>% mutate(test_type='group', stat_type='K_B1')
+        # kag  <- kag  %>% mutate(test_type='group', stat_type='K_A')
+      
+        ##---------------------
+        ud   <- data.table::rbindlist( self$test_shocks_did(test_type='dynamic', stat_type='UTILITY', verbose=verbose), idcol = 'test_id' )
+        kb1d <- data.table::rbindlist( self$test_shocks_did(test_type='dynamic', stat_type='K_B1', verbose=verbose), idcol = 'test_id' )
+        kad  <- data.table::rbindlist( self$test_shocks_did(test_type='dynamic', stat_type='K_A', verbose=verbose), idcol = 'test_id' )
+        ##
+        ud   <- ud   %>% mutate(test_type='dynamic', stat_type='UTILITY')
+        kb1d <- kb1d %>% mutate(test_type='dynamic', stat_type='K_B1')
+        kad  <- kad  %>% mutate(test_type='dynamic', stat_type='K_A')
+        
+        stat_type_levels <- c('UTILITY','K_B1','K_A')
+        
+        dfdyn <-  ud %>% bind_rows( kad ) %>% bind_rows( kb1d ) %>%
+          filter(event.time >= -1) %>%
+          mutate(combined_comparison = 'Common Treatment Scale',
+                 stat_type = factor(stat_type, levels=stat_type_levels))
+        
+        ##------------------- Plot 1 --------------------------------------------
+        
+        plt1 <- ggplot(dfdyn, aes(x=event.time, y=estimate, color=test_id, fill=test_id)) + 
+          geom_point(pch=1, size=1.5) + 
+          # geom_errorbar(aes(ymin=point.conf.low, ymax=point.conf.high), width=0.2, color='blue') + 
+          geom_line(alpha=.8) +
+          geom_ribbon(aes(ymin=point.conf.low, ymax=point.conf.high), alpha=.12) +
+          # geom_smooth(method='loess', alpha=.1) +
+          geom_hline(yintercept = 0, linetype=1, color='black') + 
+          geom_vline(xintercept = 0, linetype=2, color='black') + 
+          # geom_vline(xintercept = nsteps_first_shock_on, linetype=4, color='black') + 
+          facet_grid(combined_comparison ~ stat_type) +
+          scale_color_brewer(palette = 'Set1') +
+          scale_fill_brewer(palette = 'Set1') +
+          # scale_color_grey() +  ##, direction = -1 ## reverse 
+          theme_bw() + theme(legend.position = 'top') +
+          labs(
+            # title = 'Multiperiod Diff-in-Diff\nPointwise Estimates and Bootstrapped 95CI ',
+            y = 'Avg. Treatment Effect on Treated (ATT)',
+            x = '', 
+            color = 'Strategy Comparison:  ',
+            fill = 'Strategy Comparison:  '
+          )
+        ##------------------ Plot 2 --------------------------------------------
+        plt2 <- ggplot(dfdyn, aes(x=event.time, y=estimate)) + 
+          geom_point(aes(color=test_id, fill=test_id), pch=1, size=1.5) + 
+          # geom_errorbar(aes(ymin=point.conf.low, ymax=point.conf.high), width=0.2, color='blue') + 
+          geom_line(alpha=.6) +
+          geom_ribbon(aes(ymin=point.conf.low, ymax=point.conf.high, color=test_id, fill=test_id), alpha=.12) +
+          # geom_smooth(method='loess', alpha=.1) +
+          geom_hline(yintercept = 0, linetype=1, color='black') + 
+          geom_vline(xintercept = 0, linetype=2, color='black') +
+          # geom_vline(xintercept = nsteps_first_shock_on, linetype=4, color='black') + 
+          scale_color_brewer(palette = 'Set1') +
+          scale_fill_brewer(palette = 'Set1') +
+          facet_grid(test_id ~ stat_type, scales='free') +
+          theme_bw() + theme(legend.position = 'none') +
+          labs(
+            # title = 'Multiperiod Diff-in-Diff by Strategy[x] vs. Control\nPointwise Estimates and Bootstrapped 95CI ',
+            y = 'Avg. Treatment Effect on Treated (ATT)',
+            x = sprintf('Event Time\n( chain_step_id - %s )',  dfdyn$first_treated_step[1])
+          )
+        
+        ##------------------ Shocks Panels--------------------------------------
+        if (!is.null(self$theta_shocks)) {
+          ##--- plot 1 shock panels --------
+          shock_rects1 <- self$get_theta_shock_rects_df(self$theta_shocks)%>%
+            mutate(estimate=0, chain_step_id=0, test_id=NA, event.time=0, 
+                   start_orig=start, 
+                   end_orig=end, 
+                   start=start-first_shock_on_step, 
+                   end=end-first_shock_on_step)
+          suppressMessages({  layout1 <- ggplot_build(plt1)$layout  })
+          y_maxs1 <- unlist(lapply(layout1$panel_params, function(x) rep(  max(x$y.range),  nrow(shock_rects1)) ))
+          plt1 <- plt1 + geom_rect(data=shock_rects1, aes(xmin=start, xmax=end, ymin=-Inf, ymax=Inf),
+                                   fill='darkorange', color='orange',linetype=2,  alpha=.05)
+          plt1 <- plt1 + geom_text(data = shock_rects1, aes(x = (start + end) / 2, y = y_maxs1, label = label),
+                                   vjust = 0, size = 2.7, color='black') #fontface = "bold"
+          
+          ##--- plot 2 shock panels ---------
+          shock_rects2 <- self$get_theta_shock_rects_df(self$theta_shocks)%>%
+            mutate(estimate=0, chain_step_id=0, event.time=0, 
+                   start_orig=start, 
+                   end_orig=end, 
+                   start=start-first_shock_on_step, 
+                   end=end-first_shock_on_step)
+          suppressMessages({  layout2 <- ggplot_build(plt2)$layout  })
+          y_maxs2 <- unlist(lapply(layout2$panel_params, function(x) rep(  max(x$y.range),  nrow(shock_rects2)) ))
+          plt2 <- plt2 + geom_rect(data=shock_rects2, aes(xmin=start, xmax=end, ymin=-Inf, ymax=Inf),
+                                   fill='darkorange', color='orange',linetype=2,  alpha=.05)
+          plt2 <- plt2 + geom_text(data = shock_rects2, aes(x = (start + end) / 2, y = y_maxs2, label = label),
+                                   vjust = 0, size = 2.7, color='black') #fontface = "bold"
+        }
+        
+        
+        ##------------------- Combined Plot ------------------------------------
+        combined_plot <- ggarrange(plotlist=list(plt1, plt2), nrow=2)
+        
+        # Add common title
+        combined_title_str <- "Multiperiod Diff-in-Diff Tests of Actor Utility and Degrees (K_B1, K_A)"
+        combined_plot <- annotate_figure(combined_plot, 
+                                         top = text_grob(combined_title_str, face = "bold", size = 14)) ##face = "bold"
+        
+        return(list(
+          plot = combined_plot,
+          data = dfdyn
+        ))
+        
+        
+      }  else {
+        stop('model_type not supported.')
+      }
+    },
+    
+    
+    ## 
+    test_shocks_did = function(test_type = 'dynamic', ## c('dynamic','group')
+                               stat_type = 'utility',  ## c('utility','K_A','K_B1','K_B2','K_C') ##,'utility_contributions, 'net_stats')
+                               verbose = FALSE
+                               ) {
+      
+      test_list <- if(grepl('K_', stat_type)) {
+        self$compute_K_shocks(K_type = stat_type, verbose = verbose)
+      } else {
+        self$compute_utility_shocks(verbose = verbose)
+      }
+      
+      test_key <- switch(test_type, 
+                         group   = 'group',
+                         dynamic = 'dynamic')
+      if (is.null(test_key))
+        stop(sprintf('test_type=`%s` not supported.', test_type))
+      
+      ##
+      reg_table_list <- lapply(test_list, function(test) {
+        model_test <- test$did[[ test_key ]]
+        reg_df <- tidy(model_test) %>% 
+          mutate(`(sig.)`= ifelse( (point.conf.low * point.conf.high) < 0 | is.na(point.conf.low), '', ' * ')) %>% 
+          select( !c('type') ) %>% mutate(first_treated_step = test$first_treated_step)
+        # if (test_type=='dynamic') 
+        #   reg_df <- reg_df %>% filter(event.time >= -1) 
+        #
+        reg_df
+      })
+      
+      return(reg_table_list)
+      
+    },
+    
+    
+    
+    
+    
     
     ##
     # n_obs=8
@@ -5083,13 +6078,22 @@ SaomNkRSienaBiEnv <- R6Class(
     strat_type_ids <- params$strat_type_ids
     interact_type_ids <- params$interact_type_ids
     #
+    structeffs_str <- paste( paste(paste(names(structeffs), structeffs, sep='= '), sep=''), collapse = ';  ')
+    #
+    components_str <- paste( paste(paste(names(covs)[component_type_ids], covs[component_type_ids], sep='= '), sep=''), collapse = ';  ')
+    #
+    strategies_str <- paste( paste(paste(names(covs)[strat_type_ids], covs[strat_type_ids], sep='= '), sep='' ), collapse = ';  ')
+    #
+    interactions_str <- ifelse(
+      length(interact_type_ids),
+      paste( paste(paste(names(covs)[interact_type_ids], covs[interact_type_ids], sep='= '), sep='' ), collapse = ';  '), 
+      ' (none)'
+    )
+    #
     sim_title_str <- sprintf(
       'Environment: Actors (M) = %s, Components (N) = %s, Init.P. = %.2f\nStructure:  %s\nComponent Payoff: %s\nActor Strategy:  %s\nInteractions:  %s', 
       self$M, self$N, self$BI_PROB,
-      paste( paste(paste(names(structeffs), structeffs, sep='= '), sep=''), collapse = ';  '),
-      paste( paste(paste(names(covs)[component_type_ids], covs[component_type_ids], sep='= '), sep=''), collapse = ';  '),
-      paste( paste(paste(names(covs)[strat_type_ids], covs[strat_type_ids], sep='= '), sep='' ), collapse = ';  '),
-      paste( paste(paste(names(covs)[interact_type_ids], covs[interact_type_ids], sep='= '), sep='' ), collapse = ';  ')
+      structeffs_str,  components_str, strategies_str,  interactions_str
     )
     return(sim_title_str)
   },
@@ -5256,6 +6260,7 @@ SaomNkRSienaBiEnv <- R6Class(
       plt2 <- plt2 + 
           geom_point(aes(color=strategy,fill=strategy), alpha=point_alpha, shape=1, size= point_size )  + 
           geom_smooth(aes(color=strategy,fill=strategy, linetype=strategy), method='loess', alpha=.1, span=loess_span) +
+          geom_hline(yintercept = 0, linetype=2, ) +
           facet_grid(effect_level ~ ., scales='free_y') +
           theme_bw() + theme(legend.position = 'bottom') +
           ggtitle(plt_title)

@@ -9,14 +9,32 @@ output:
   word_document: default
 ---
 
-This project begins from the simple premise that the task of endogenizing the NK search landscape can be done by representing the search environment as a binary bipartite network of `M` actors affiliating with `N` components. This bipartite network can be then be analyzed according to the Stochastic Actor-Oriented Model (SAOM) [(Snijders, 1996)](https://doi.org/10.1080/0022250X.1996.9990178).
+This project develops the idea that the task of endogenizing the 
+NK search landscape can be accomplished by representing the search environment 
+as a binary network of `M` actors affiliating with `N` components. 
+The resulting bipartite network data generation process (DGP) -- 
+using the bipartite network as the dependent variable (DV) -- 
+enables dynamic network analysis of the search system as a form of 
+Stochastic Actor-Oriented Model (SAOM) [(Snijders, 1996)](https://doi.org/10.1080/0022250X.1996.9990178).
+This new Stochastic Actor-Oriented MNK (`SaoMNK`) Model reveals that the conventional 
+`K` term (i.e., complexity, or degree of epistatic interdependence) is just 
+one part (denoted `K_C` below) of a coupled distribution of network 
+***degree*** terms (i.e., number of each type of tie to each type of node) 
+between the search system's network nodes (Actors and/or Components):
 
-Thus, the Stochastic Actor-Oriented MNK model, abbrivated `SaoMNK`, is designed for running strategic search simulation, testing, and experimentation by leveraging the `RSiena` package, an R implementation of\
+ - ***2-mode***: Bipartite DGP
+    1. `K_B1` = Actor **scope** (Actor-Component degree) 
+    2. `K_B2` = Component **popularity** (Component-Actor degree)
+ - ***1-mode***: Unipartite Projection 
+    3. `K_A` = Actor **sociality** (Actor-[Component]-Actor degree)
+    4. `K_C` = Component **complexity** *(Traditional `K`)* (Component-[Actor]-Component degree)
+
+`SaoMNK` is designed for running strategic search simulation, testing, and 
+experimentation by leveraging the `RSiena` package, an R implementation of
 Simulation Investigation for Empirical Network Analysis (SIENA).
 
-This tutorial offers a basic introduction to `SaoMNK`.
-
 ```{r dependencies, include=FALSE}
+##** THIS BLOCK IS NOT SHOWN IN OUTPUT FILE (PDF,DOC,HTML) **##
 rm(list=ls())
 ####
 # ## General settings to hide code
@@ -38,7 +56,9 @@ library(uuid)
 library(ggpubr)
 library(data.table)
 library(DT)
-library(Matrix)  # For block diagonal matrices
+library(Matrix)# For block diagonal matrices
+library(knitr)
+library(kableExtra)
 
 #
 .ts <- gsub('\\.','',as.character(as.numeric(Sys.time())))
@@ -52,7 +72,7 @@ dir_ext <- 'D:\\Search_networks'
 dir_r <- 'C:\\Users\\sdr8y\\OneDrive - University of Missouri\\Research\\Search_networks\\SaoMNK\\R'
 ###############  Load R6 Class DEPENDENCIES ############################
 ## Biparite Environment Search Simulation Class
-SaomNkRSienaBiEnv <- source(file.path(dir_r, 'SAOM_NK_R6_model.R'))$value
+SaoMNK <- source(file.path(dir_r, 'SAOM_NK_R6_model.R'))$value
 
 
 #
@@ -80,20 +100,21 @@ create_block_diag <- function(N, B) {
 # # Print the matrix
 # print(block_matrix)
 
+## default settings: Users do not change; TODO: implment within restricted class attributes
+DV_NAME <- 'self$bipartite_rsienaDV'
+
 ```
 
 
 ```{r, warning=FALSE}
-###############  Load R6 Class DEPENDENCIES ############################
-## Biparite Environment Search Simulation Class
-SaomNkRSienaBiEnv <- source(file.path(dir_r, 'SAOM_NK_R6_model.R'))$value
-## default settings: Users do not change; TODO: implment within restricted class attributes
-DV_NAME <- 'self$bipartite_rsienaDV'
+## Load SaoMNK Biparite Environment Search Simulation Class
+SaoMNK <- source(file.path(dir_r, 'SAOM_NK_R6_model.R'))$value
 ## define simulation iterations based on 
-steps_per_actor <- 12
+steps_per_actor <- 30
 ```
 
-# 1. Baseline Case: No Shocks
+# 1. Shock Sequence A:  (i)Short/Large (ii)Long/Small
+
 
 ## 1.1 Environment Configuration
 
@@ -109,7 +130,7 @@ environ_params <- list(
   name = '_test_tutorial_nb_'
 )
 #
-env1 <- SaomNkRSienaBiEnv$new(environ_params)
+env1 <- SaoMNK$new(environ_params)
 ```
 
 
@@ -144,7 +165,7 @@ component_int_mat
 ```
 
 
-## 2.2.2 Structure Model List: RSiena parameters and covariates
+### 2.2.2 Structure Model List: RSiena parameters and covariates
 
 ```{r}
 
@@ -227,7 +248,7 @@ structure_model <- list(
 
 
 
-## 2.2.3 Preview Structure Model Effects
+### 2.2.3 Preview Structure Model Effects
 
 ```{r}
 env1$preview_effects(structure_model, filter=FALSE)
@@ -246,28 +267,19 @@ env1$preview_effects(structure_model, filter=FALSE)
 
 ```{r}
 theta_shocks <- list(
-  list(effect_level=c('egoX_1','egoX_2'), parameter=c(.3, 0),
-       portion = 2, shock_on=1, label='Early Shock 1'
-  ),
-  list(effect_level=c('egoX_1','egoX_2'), parameter=c(0, .5),
-       portion = 1, shock_on=1, label='Early Shock 2'
-  ),
   list(effect_level=c('egoX_1','egoX_2'), parameter=c(0, 0),
        portion = 2, shock_on=0
+  ),
+  list(effect_level=c('egoX_1','egoX_2'), parameter=c(0, .8),
+       portion = 1, shock_on=1, label='x2 Short/Lg.'
+  ),
+  list(effect_level=c('egoX_1','egoX_2'), parameter=c(.6, 0),
+       portion = 2, shock_on=1, label='x1 Long/Sm.'
+  ),
+  list(effect_level=c('egoX_1','egoX_2'), parameter=c(0, 0),
+       portion = 1, shock_on=0
   )
 )
-# theta_shocks <- list(
-#   list(effect_level=c('altX','egoX_1','egoX_2'), parameter=c(1, 1, 0), 
-#        portion = 1, shock_on=1, label='Early Shock 1'
-#   ),
-#   list(effect_level=c('altX','egoX_1','egoX_2'), parameter=c(0, 0, 1), 
-#        portion = 1, shock_on=1, label='Early Shock 2'
-#   ),
-#   list(effect_level=c('altX','egoX_1','egoX_2'), parameter=c(1, 0, 0), 
-#        portion = 2, shock_on=0
-#   )
-# )
-
 
 ## Run Rsiena search using variable parameters in theta_matrix
 env1$search_rsiena(
@@ -302,7 +314,7 @@ print(env1$component_1_coDyadCovar )
 Snapshopts of the the biparite network and the social and component epistasis interactions are taken at fixed step intervals to show the evolving multidimensional coupled search environment (actors and components)
 
 ```{r, fig.height=5, fig.width=11}
-snapshot_ids <- c(1, ceiling((1:30)*4), dim(env1$bi_env_arr)[3]  )
+snapshot_ids <- c( round(seq(1,  round(dim(env1$bi_env_arr)[3]*0.6), length.out=12) ), dim(env1$bi_env_arr)[3]  )
 env1$plot_snapshots(snapshot_ids)
 ```
 
@@ -350,12 +362,36 @@ Number of changes to component ties as distance from counterfactual affiliation 
 ```
 
 
-## 1.12 Exogenous Shock Comparison Analyses
+
+## 1.12 Plot Exogenous Shock Descriptive Comparison
+
+```{r, fig.height=10, fig.width=8, fig.dpi=800}
+env1$plot_shocks()
+```
+
 
 
 ```{r}
-tests1 <- env1$compute_performance_shocks()
-tests1
+# ## Define function
+# print_kable <- function(test_list, index) {
+#   item <- test_list[[ index ]]
+#   item_label <- names(test_list)[index]
+#   caption <- sprintf("%s",gsub('__',' vs. ',item_label))
+#   return( kable( item, digits=3, caption=caption) )
+# }
+```
+
+
+
+## 1.13 Multiperiod Diff-in-Diff Test Comparison
+
+```{r, warning=FALSE}
+suppressMessages({ shock_res1 <- env1$test_shocks('did') })
+```
+
+
+```{r, warning=FALSE, fig.height=11, fig.width=10, fig.dpi=800}
+shock_res1$plot 
 ```
 
 
@@ -369,11 +405,19 @@ tests1
 
 
 
-# 2. Switch Order of Exogenous Shock
+
+
+
+
+
+
+# 2. Shock Sequence B:  (i)Long/Small, (ii)Short/Large 
+
+
 
 
 ```{r}
-env2 <- SaomNkRSienaBiEnv$new(environ_params)
+env2 <- SaoMNK$new(environ_params)
 ```
 
 
@@ -386,24 +430,17 @@ theta_shocks_2 <- list(
   list(effect_level=c('egoX_1','egoX_2'), parameter=c(0, 0),
        portion = 2, shock_on=0
   ),
-  list(effect_level=c('egoX_1','egoX_2'), parameter=c(.3, 0),
-       portion = 2, shock_on=1, label='Late Shock 1'
+  list(effect_level=c('egoX_1','egoX_2'), parameter=c(.6, 0),
+       portion = 2, shock_on=1, label='x1 Long/Sm.'
   ),
-  list(effect_level=c('egoX_1','egoX_2'), parameter=c(0, .5),
-       portion = 1, shock_on=1, label='Late Shock 2'
+  list(effect_level=c('egoX_1','egoX_2'), parameter=c(0, .8),
+       portion = 1, shock_on=1, label='x2 Short/Lg.'
+  ),
+  list(effect_level=c('egoX_1','egoX_2'), parameter=c(0, 0),
+       portion = 1, shock_on=0
   )
 )
-# theta_shocks_2 <- list(
-#   list(effect_level=c('altX','egoX_1','egoX_2'), parameter=c(1, 0, 0), 
-#        portion = 2, shock_on=0
-#   ),
-#   list(effect_level=c('altX','egoX_1','egoX_2'), parameter=c(0, 1, 0), 
-#        portion = 1, shock_on=1, label='Late Shock 1'
-#   ),
-#   list(effect_level=c('altX','egoX_1','egoX_2'), parameter=c(1, 0, 1), 
-#        portion = 1, shock_on=1, label='Late Shock 2'
-#   )
-# )
+
 
 ## Run Rsiena search using variable parameters in theta_matrix
 env2$search_rsiena(
@@ -442,7 +479,7 @@ print(env2$component_1_coDyadCovar )
 Snapshopts of the the biparite network and the social and component epistasis interactions are taken at fixed step intervals to show the evolving multidimensional coupled search environment (actors and components)
 
 ```{r, fig.height=5, fig.width=11}
-snapshot_ids <- c(1, ceiling((1:30)*4), dim(env1$bi_env_arr)[3]  )
+snapshot_ids <- c( round(seq(1,  round(dim(env2$bi_env_arr)[3]*0.6), length.out=12) ), dim(env2$bi_env_arr)[3]  )
 env2$plot_snapshots(snapshot_ids)
 ```
 
@@ -491,33 +528,42 @@ Number of changes to component ties as distance from counterfactual affiliation 
 
 
 
-## 2.12 Exogenous Shock Comparison Analyses
 
+## 2.12 Plot Exogenous Shock Descriptive Comparison
 
-
-```{r}
-tests2 <- env2$compute_performance_shocks()
-tests2
+```{r, fig.height=10, fig.width=8, fig.dpi=800}
+env2$plot_shocks()
 ```
 
 
 
 
-# 3 Compare
 
-```{r}
-# modlist <- c(
-#   lapply(env1$theta_shocks,function(x)x$rsiena_model),
-#   lapply(env2$theta_shocks,function(x)x$rsiena_model)
-# )
-# modlist <- list(
-#   env1_h1 = env1$theta_shocks[[1]]$rsiena_model,
-#   env1_h2 = env1$theta_shocks[[2]]$rsiena_model,
-#   env2_h1 = env2$theta_shocks[[1]]$rsiena_model,
-#   env2_h2 = env2$theta_shocks[[2]]$rsiena_model
-# )
-# screenreg(modlist, digits=3, single.row = F)
+## 2.13 Multiperiod Diff-in-Diff Test Comparison
+
+```{r, warning=FALSE}
+suppressMessages({ shock_res2 <- env2$test_shocks('did') })
 ```
 
 
-End.
+```{r, warning=FALSE, fig.height=11, fig.width=10, fig.dpi=800}
+shock_res2$plot 
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
